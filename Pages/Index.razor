@@ -1,0 +1,192 @@
+﻿@page "/"
+@implements IAsyncDisposable
+@inject NavigationManager Navigation
+@using Microsoft.AspNetCore.SignalR.Client
+@using VideoHome.Data;
+@using Excubo.Blazor.TreeViews
+@using System.Diagnostics
+
+@using SoloX.BlazorLayout.Core
+@using SoloX.BlazorLayout.Containers.Dock
+
+<DockContainer Fill="Fill.Full" Proportion="20">
+    <DockPanel Class="px-4" Side="Side.Right">
+
+        <TreeView Items="Nested" GetChildren="(item) => item.Children" InitiallyCollapsed="true">
+            <ItemTemplate>
+                <div @onclick="()=>ItemClicked(context.Item)">
+                    @if (context.Item.ItemType == FileTreeViewItem.NodeType.Folder)
+                    {
+                        <MatIcon Icon="folder" />
+                    }
+                    else
+                    {
+                        <MatIcon Icon="insert_drive_file" />
+                    }
+                    @context.Item.Text
+                </div>
+            </ItemTemplate>
+        </TreeView>
+    </DockPanel>
+
+    <div class="d-flex flex-column p-2 align-content-center border border-info">
+        <BlazoredVideo @ref="videoRef" width="1280" height="720" muted="muted" controls="controls,mute"
+            EventFired="OnEvent"
+            VideoEventOptions="options" class="w-100" style="max-width:1600px;">
+            <source src=@videoSource type="video/mp4" />
+        </BlazoredVideo>
+    </div>
+
+</DockContainer>
+
+
+@code {
+    private Dictionary<VideoEvents, VideoStateOptions> options = new();
+    private VideoState videoState = new();
+
+    private DateTimeOffset lastUpdateRecieved = DateTimeOffset.MinValue;
+
+    private BlazoredVideo videoRef;
+    private HubConnection? hubConnection;
+    string? videoSource = "video/Korra/Book1/Chapter_01_Welcome_To_The_Republic_City.mp4";
+
+    async Task ItemClicked(FileTreeViewItem item)
+    {
+        if (item.ItemType == FileTreeViewItem.NodeType.File)
+        {
+            Debug.WriteLine($"Item pressed: {item.Path}");
+            videoSource = item.Path;
+            await videoRef.PausePlayback();
+            await SendState();
+
+            await videoRef.ReloadControl();
+            StateHasChanged();
+        }
+        else
+        {
+            Debug.WriteLine($"Folder clicked!");
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var allOptionsEnabled = new VideoStateOptions() { All = true };
+        foreach (var item in (VideoEvents[])(Enum.GetValues(typeof(VideoEvents))))
+        {
+            if (item != VideoEvents.NotSet)
+            {
+                options[item] = allOptionsEnabled;
+            }
+        }
+
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/syncvideohub"))
+            .Build();
+
+        hubConnection.On<int, DateTimeOffset>("Ping", async (n, timestamp) =>
+        {
+            await hubConnection.SendAsync("Pong", n, timestamp);
+        });
+
+        hubConnection.On<VideoStateDto>("ReceiveState", StateRecieved);
+
+        await hubConnection.StartAsync();
+
+        @* await hubConnection.SendAsync("RequestState"); *@
+    }
+
+    private VideoStateDto GetStateDto(VideoState state)
+    {
+        return new VideoStateDto()
+        {
+            LastUpdated = DateTimeOffset.UtcNow,
+            IsPlaying = !state.Paused,
+            Source = videoSource,
+            VideoTimestamp = state.CurrentTime
+        };
+    }
+
+    private async Task StateRecieved(VideoStateDto newstate)
+    {
+        if (videoRef is null)
+            return;
+        Console.WriteLine($"Client: State recieved. {newstate.Source?.Split('/').LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
+
+        if(newstate.Source != videoSource)
+        {
+            Console.WriteLine($"Client: Setting video source.");
+            videoSource = newstate.Source;
+
+            if(!string.IsNullOrEmpty(videoSource))
+            {
+                await InvokeAsync(StateHasChanged);
+                await videoRef.ReloadControl();
+            }
+        }
+        if(Math.Abs(newstate.VideoTimestamp - videoState.CurrentTime) > 0.5)
+        {
+            Console.WriteLine($"Client: Setting time.");
+            await videoRef.SetCurrentTimeAsync(newstate.VideoTimestamp); 
+        }
+        @* if (newstate.IsPlaying == videoState.Paused)
+        { *@
+            if (newstate.IsPlaying)
+            {
+                Console.WriteLine($"Client: Pausing playback.");
+                await videoRef.StartPlayback();
+            }
+            else
+            {
+                Console.WriteLine($"Client: Pausing playback.");
+                await videoRef.PausePlayback();
+            }
+        @* } *@
+        lastUpdateRecieved = DateTimeOffset.Now;
+        @* StateHasChanged(); *@
+    }
+
+    private async Task SendState()
+    {
+        if ((DateTimeOffset.Now - lastUpdateRecieved).TotalSeconds < 0.7)
+            return;
+
+        VideoStateDto newstate = GetStateDto(videoState); 
+        Console.WriteLine($"Client: Sending state. {newstate.Source?.Split('/').LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
+
+        await hubConnection.SendAsync("UpdateState", newstate);
+    }
+
+    private async void OnEvent(VideoEventData videoData)
+    {
+        videoState = videoData.State;
+
+        
+        switch (videoData.EventName)
+        {
+            case VideoEvents.Play:
+            case VideoEvents.Playing:
+            case VideoEvents.Pause:
+            case VideoEvents.Seeking:
+            case VideoEvents.Seeked:
+                Console.WriteLine($"Client: OnEvent: {videoData.EventName} {videoState.CurrentTime}");
+                await SendState();
+                break;
+
+            default:
+            break;
+        }
+        @* StateHasChanged(); *@
+    }
+
+    private List<FileTreeViewItem> Nested =
+    FileTreeViewItem.EnumerateFilesWithRootMapping("/home/andreas/Videos/", "video/");
+
+    public async ValueTask DisposeAsync()
+    {
+        Console.WriteLine("Client: Disposing razor page.");
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

@@ -1,0 +1,57 @@
+﻿@page "/counter"
+@using Microsoft.AspNetCore.SignalR.Client
+@using VideoHome.Data;
+@inject NavigationManager Navigation
+@inject CounterService CounterService;
+@implements IAsyncDisposable
+
+
+<PageTitle>Click Counter</PageTitle>
+
+<h1>Click Counter</h1>
+
+<p role="status">Current count: @counter</p>
+
+<button class="btn btn-primary" @onclick="IncrementCounter">Click me</button>
+
+@code {
+    private int counter;    
+    private HubConnection? hubConnection;
+
+    protected override async Task OnInitializedAsync()
+    {
+        counter = CounterService.GlobalCounter;
+
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/counterhub"))
+            .Build();
+
+        hubConnection.On<int>("UpdateCounter", (newcounter) =>
+        {
+            counter = newcounter;
+            InvokeAsync(StateHasChanged);
+        });
+
+        await hubConnection.StartAsync();
+    }
+
+    private async Task IncrementCounter()
+	{
+        counter++;
+	    if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("IncrementCounter");
+        }
+	}
+
+    public bool IsConnected =>
+        hubConnection?.State == HubConnectionState.Connected;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}
