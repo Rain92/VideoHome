@@ -11,12 +11,12 @@
 
 <link rel="stylesheet" href="css/plyr.css" />
 
-<DockContainer Fill="Fill.Full" Proportion="20">
+<DockContainer Fill="Fill.Full" Proportion="25">
     <DockPanel Class="px-4" Side="Side.Right">
 
         <TreeView Items="Nested" GetChildren="(item) => item.Children" InitiallyCollapsed="true">
             <ItemTemplate>
-                <div @onclick="()=>ItemClicked(context.Item)">
+                <div @onclick="()=>ItemClicked(context.Item)" class="treeviewline">
                     @if (context.Item.ItemType == FileTreeViewItem.NodeType.Folder)
                     {
                         <MatIcon Icon="folder" />

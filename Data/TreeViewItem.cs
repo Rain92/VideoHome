@@ -27,12 +27,12 @@ public class FileTreeViewItem
             Children = new()
         };
 
-        foreach (DirectoryInfo dirInfo in path.GetDirectories())
+        foreach (DirectoryInfo dirInfo in path.GetDirectories().OrderBy(d => d.Name))
         {
             item.Children.AddRange(EnumerateFiles(dirInfo, root, rootmapping));
         }
 
-        foreach (FileInfo fi in path.GetFiles("*.*"))
+        foreach (FileInfo fi in path.GetFiles("*.*").OrderBy(fi => fi.Name))
         {
             FileTreeViewItem file = new FileTreeViewItem
             {
