@@ -62,8 +62,8 @@ app.MapHub<SyncVideoHub>("/syncvideohub");
 app.MapFallbackToPage("/_Host");
 
 app.UseStaticFiles(new StaticFileOptions() {
-    FileProvider = new PhysicalFileProvider(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Videos")),
-    RequestPath = new PathString("/video")
+    FileProvider = new PhysicalFileProvider(builder.Configuration.GetSection("VideoMapping")["VideoPath"]),
+    RequestPath = new PathString(builder.Configuration.GetSection("VideoMapping")["MapTo"])
 });
 
 app.Run();

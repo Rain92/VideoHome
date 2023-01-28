@@ -8,13 +8,15 @@
 @using System.Diagnostics
 @using SoloX.BlazorLayout.Core
 @using SoloX.BlazorLayout.Containers.Dock
+@using Microsoft.Extensions.Configuration
+@inject IConfiguration Configuration;
 
 <link rel="stylesheet" href="css/plyr.css" />
 
 <DockContainer Fill="Fill.Full" Proportion="25">
     <DockPanel Class="px-4" Side="Side.Right">
 
-        <TreeView Items="Nested" GetChildren="(item) => item.Children" InitiallyCollapsed="true">
+        <TreeView Items="TreeViewItems" GetChildren="(item) => item.Children" InitiallyCollapsed="true">
             <ItemTemplate>
                 <div @onclick="()=>ItemClicked(context.Item)" class="treeviewline">
                     @if (context.Item.ItemType == FileTreeViewItem.NodeType.Folder)
@@ -91,6 +93,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        TreeViewItems = FileTreeViewItem.EnumerateFilesWithRootMapping(Configuration.GetSection("VideoMapping")["VideoPath"], 
+                Configuration.GetSection("VideoMapping")["MapTo"]);
+
         var allOptionsEnabled = new VideoStateOptions() { All = true };
         foreach (var item in (VideoEvents[])(Enum.GetValues(typeof(VideoEvents))))
         {
@@ -198,8 +203,7 @@
         @* StateHasChanged(); *@
     }
 
-    private List<FileTreeViewItem> Nested =
-    FileTreeViewItem.EnumerateFilesWithRootMapping(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Videos"), "video/");
+    private List<FileTreeViewItem> TreeViewItems;
 
     public async ValueTask DisposeAsync()
     {
