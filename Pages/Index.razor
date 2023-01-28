@@ -2,12 +2,14 @@
 @implements IAsyncDisposable
 @inject NavigationManager Navigation
 @using Microsoft.AspNetCore.SignalR.Client
+@inject IJSRuntime JS
 @using VideoHome.Data;
 @using Excubo.Blazor.TreeViews
 @using System.Diagnostics
-
 @using SoloX.BlazorLayout.Core
 @using SoloX.BlazorLayout.Containers.Dock
+
+<link rel="stylesheet" href="css/plyr.css" />
 
 <DockContainer Fill="Fill.Full" Proportion="20">
     <DockPanel Class="px-4" Side="Side.Right">
@@ -29,10 +31,13 @@
         </TreeView>
     </DockPanel>
 
-    <div class="d-flex flex-column p-2 align-content-center border border-info">
-        <BlazoredVideo @ref="videoRef" width="1280" height="720" muted="muted" controls="controls,mute"
+    <div class="d-flex flex-column p-2 align-content-center">
+        <BlazoredVideo @ref="videoRef"  id="playerx"
+            width="1280" height="720" 
+            controls playsinline
             EventFired="OnEvent"
-            VideoEventOptions="options" class="w-100" style="max-width:1600px;">
+            VideoEventOptions="options" 
+            data-plyr-config='{ "disableContextMenu": "false" }'>
             <source src=@videoSource type="video/mp4" />
         </BlazoredVideo>
     </div>
@@ -48,7 +53,7 @@
 
     private BlazoredVideo videoRef;
     private HubConnection? hubConnection;
-    string? videoSource = "video/Korra/Book1/Chapter_01_Welcome_To_The_Republic_City.mp4";
+    string? videoSource = "video/Korra/Book1/Chapter_06_And_the_Winner_is.mp4";
 
     async Task ItemClicked(FileTreeViewItem item)
     {
@@ -65,6 +70,22 @@
         else
         {
             Debug.WriteLine($"Folder clicked!");
+        }
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        IJSObjectReference Plyr;
+        IJSObjectReference Main;    
+
+        if (firstRender)
+        {
+            Plyr = await JS.InvokeAsync<IJSObjectReference>(
+                        "import", "./plyr.js");
+            Main = await JS.InvokeAsync<IJSObjectReference>(
+                        "import", "./plyr-loder.js");
+            await Main.InvokeVoidAsync("load", "playerx").AsTask();
+
+            await hubConnection.SendAsync("RequestState");
         }
     }
 
@@ -92,17 +113,16 @@
 
         await hubConnection.StartAsync();
 
-        @* await hubConnection.SendAsync("RequestState"); *@
     }
 
-    private VideoStateDto GetStateDto(VideoState state)
+    private VideoStateDto GetStateDto()
     {
         return new VideoStateDto()
         {
             LastUpdated = DateTimeOffset.UtcNow,
-            IsPlaying = !state.Paused,
+            IsPlaying = !videoState.Paused,
             Source = videoSource,
-            VideoTimestamp = state.CurrentTime
+            VideoTimestamp = videoState.CurrentTime
         };
     }
 
@@ -150,8 +170,8 @@
         if ((DateTimeOffset.Now - lastUpdateRecieved).TotalSeconds < 0.7)
             return;
 
-        VideoStateDto newstate = GetStateDto(videoState); 
-        Console.WriteLine($"Client: Sending state. {newstate.Source?.Split('/').LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
+        VideoStateDto newstate = GetStateDto(); 
+        Console.WriteLine($"Client: Sending state. {newstate.Source?.Split('/')?.LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
 
         await hubConnection.SendAsync("UpdateState", newstate);
     }
