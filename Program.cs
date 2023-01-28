@@ -62,7 +62,7 @@ app.MapHub<SyncVideoHub>("/syncvideohub");
 app.MapFallbackToPage("/_Host");
 
 app.UseStaticFiles(new StaticFileOptions() {
-    FileProvider = new PhysicalFileProvider("/home/andreas/Videos"),
+    FileProvider = new PhysicalFileProvider(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Videos")),
     RequestPath = new PathString("/video")
 });
 
