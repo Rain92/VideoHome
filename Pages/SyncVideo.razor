@@ -10,12 +10,26 @@
 @using SoloX.BlazorLayout.Containers.Dock
 @using Microsoft.Extensions.Configuration
 @inject IConfiguration Configuration;
+@using Microsoft.Extensions.Logging
+@inject ILogger<SyncVideo> Logger
 
 <link rel="stylesheet" href="css/plyr.css" />
 
 <DockContainer Fill="Fill.Full" Proportion="25">
     <DockPanel Class="px-4" Side="Side.Right">
 
+        <div>Local Files:</div><br>
+        @if (!isUploading)
+        {
+
+            <div class="file-input-zone">
+                <InputFile OnChange="@UploadFiles" multiple title="Upload video" />
+            </div>                <br>
+        }
+        else
+        {
+            <div>Uploading...</div><br>
+        }
         <TreeView Items="TreeViewItems" GetChildren="(item) => item.Children" InitiallyCollapsed="true">
             <ItemTemplate>
                 <div @onclick="()=>ItemClicked(context.Item)" class="treeviewline">
@@ -74,6 +88,7 @@
             Debug.WriteLine($"Folder clicked!");
         }
     }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         IJSObjectReference Plyr;
@@ -91,11 +106,58 @@
         }
     }
 
-    protected override async Task OnInitializedAsync()
+    private long maxFileSize = 2L * 1024 * 1024 * 1024;
+    private int maxAllowedFiles = 3;
+    private bool isUploading;
+    private string[] supportedFormats = {".mp4", ".webm"};
+    private async Task UploadFiles(InputFileChangeEventArgs e)
     {
+        isUploading = true;
+
+        foreach (var file in e.GetMultipleFiles(maxAllowedFiles))
+        {
+            try
+            {
+                var dir =  Path.Combine(Configuration.GetSection("VideoMapping")["VideoPath"], "uploads");
+                Directory.CreateDirectory(dir);
+                var path = Path.Combine(dir, file.Name);
+
+                if(!supportedFormats.Any(fo => path.EndsWith(fo)))
+                {
+                    await JS.InvokeVoidAsync("alert", $"File format not supported!\n Supported file formats are: {string.Join(" ", supportedFormats)}");
+                    continue;
+                }
+                if(File.Exists(path))
+                {
+                    await JS.InvokeVoidAsync("alert", $"File called {file.Name} already exists!");
+                    continue;
+                }
+
+
+                await using FileStream fs = new(path, FileMode.Create);
+                await file.OpenReadStream(maxFileSize).CopyToAsync(fs);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("File: {Filename} Error: {Error}", 
+                    file.Name, ex.Message);
+            }
+        }
+
+        isUploading = false;
+        RefreshFileTree();
+    }
+    private void RefreshFileTree()
+    {
+
         TreeViewItems = FileTreeViewItem.EnumerateFilesWithRootMapping(Configuration.GetSection("VideoMapping")["VideoPath"], 
                 Configuration.GetSection("VideoMapping")["MapTo"]);
 
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        RefreshFileTree();
         var allOptionsEnabled = new VideoStateOptions() { All = true };
         foreach (var item in (VideoEvents[])(Enum.GetValues(typeof(VideoEvents))))
         {
