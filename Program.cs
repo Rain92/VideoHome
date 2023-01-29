@@ -13,15 +13,15 @@ builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor(
     options => 
     {
-        options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromSeconds(5);
+        options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromSeconds(10);
         options.DetailedErrors = true;
     })
     .AddHubOptions(options =>
     {
-        options.ClientTimeoutInterval = TimeSpan.FromSeconds(15);
+        options.ClientTimeoutInterval = TimeSpan.FromSeconds(20);
         options.EnableDetailedErrors = true;
-        options.HandshakeTimeout = TimeSpan.FromSeconds(15);
-        options.KeepAliveInterval = TimeSpan.FromSeconds(5);
+        options.HandshakeTimeout = TimeSpan.FromSeconds(20);
+        options.KeepAliveInterval = TimeSpan.FromSeconds(10);
         options.MaximumParallelInvocationsPerClient = 1;
         options.MaximumReceiveMessageSize = 2 * 1024* 1024;
         options.StreamBufferCapacity = 30;

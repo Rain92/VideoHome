@@ -12,6 +12,7 @@
     <PackageReference Include="MatBlazor" Version="2.8.0" />
     <PackageReference Include="Blazored.Video" Version="1.0.1" />
     <PackageReference Include="SoloX.BlazorLayout" Version="1.0.0-alpha.7" />
+    <PackageReference Include="YoutubeExplode" Version="6.2.5" />
   </ItemGroup>
 
 </Project>

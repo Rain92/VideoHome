@@ -11,6 +11,8 @@
 @using Microsoft.Extensions.Configuration
 @inject IConfiguration Configuration;
 @using Microsoft.Extensions.Logging
+@using YoutubeExplode;
+@using YoutubeExplode.Videos.Streams;
 @inject ILogger<SyncVideo> Logger
 
 <link rel="stylesheet" href="css/plyr.css" />
@@ -18,13 +20,19 @@
 <DockContainer Fill="Fill.Full" Proportion="25">
     <DockPanel Class="px-4" Side="Side.Right">
 
+        <div>Watch Youtube stream:</div>
+        <div class="file-input-zone">
+            <input type="text" @bind="streamInputBoxContent" />
+            <button onclick="@PlayYoutube">Play</button>
+        </div><br>
+
         <div>Local Files:</div><br>
         @if (!isUploading)
         {
-
             <div class="file-input-zone">
+                Upload:
                 <InputFile OnChange="@UploadFiles" multiple title="Upload video" />
-            </div>                <br>
+            </div><br>
         }
         else
         {
@@ -68,25 +76,48 @@
     private DateTimeOffset lastUpdateRecieved = DateTimeOffset.MinValue;
 
     private BlazoredVideo videoRef;
+    private string? streamInputBoxContent;
     private HubConnection? hubConnection;
     string? videoSource = "video/Korra/Book1/Chapter_06_And_the_Winner_is.mp4";
 
-    async Task ItemClicked(FileTreeViewItem item)
+
+    private YoutubeClient youtube = new();
+
+    private async void PlayYoutube()
+    {
+        var url = streamInputBoxContent;
+        if(url == null || !url.Contains("youtube."))
+            return;
+            
+        Console.WriteLine($"Getting youtube video for {url}");
+        var streamManifest = await youtube.Videos.Streams.GetManifestAsync(url);
+        var streamInfo = streamManifest.GetMuxedStreams().GetWithHighestVideoQuality();
+        Console.WriteLine(streamInfo.Url);
+        await SetVideoSource(streamInfo.Url);
+    }
+
+    private async Task ItemClicked(FileTreeViewItem item)
     {
         if (item.ItemType == FileTreeViewItem.NodeType.File)
         {
             Debug.WriteLine($"Item pressed: {item.Path}");
-            videoSource = item.Path;
-            await videoRef.PausePlayback();
-            await SendState();
-
-            await videoRef.ReloadControl();
-            StateHasChanged();
+            await SetVideoSource(item.Path);
         }
         else
         {
             Debug.WriteLine($"Folder clicked!");
         }
+    }
+
+    private async Task SetVideoSource(string src)
+    {
+
+            videoSource = src;
+            await videoRef.PausePlayback();
+            await SendState();
+
+            await videoRef.ReloadControl();
+            await InvokeAsync(StateHasChanged);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
