@@ -63,6 +63,18 @@
             VideoEventOptions="options" 
             data-plyr-config='{ "disableContextMenu": "false" }'>
             <source src=@videoSource type="video/mp4" />
+            <!-- Caption files -->
+            @if (videoCaptions != null && videoCaptions.Any())
+            {
+                foreach (var cc in videoCaptions)
+                {
+                    <track kind="subtitles"
+                        label="English"
+                        srclang="en"
+                        src=@cc
+                        default />
+                }
+            }
         </BlazoredVideo>
     </div>
 
@@ -78,8 +90,8 @@
     private BlazoredVideo videoRef;
     private string? streamInputBoxContent;
     private HubConnection? hubConnection;
-    string? videoSource = "video/Korra/Book1/Chapter_06_And_the_Winner_is.mp4";
-
+    string? videoSource = "";
+    List<string> videoCaptions = new() {""};
 
     private YoutubeClient youtube = new();
 
@@ -93,7 +105,7 @@
         var streamManifest = await youtube.Videos.Streams.GetManifestAsync(url);
         var streamInfo = streamManifest.GetMuxedStreams().GetWithHighestVideoQuality();
         Console.WriteLine(streamInfo.Url);
-        await SetVideoSource(streamInfo.Url);
+        await SetVideoSource(streamInfo.Url, false);
     }
 
     private async Task ItemClicked(FileTreeViewItem item)
@@ -101,7 +113,7 @@
         if (item.ItemType == FileTreeViewItem.NodeType.File)
         {
             Debug.WriteLine($"Item pressed: {item.Path}");
-            await SetVideoSource(item.Path);
+            await SetVideoSource(item.Path, true);
         }
         else
         {
@@ -109,10 +121,10 @@
         }
     }
 
-    private async Task SetVideoSource(string src)
+    private async Task SetVideoSource(string src, bool setCaptions)
     {
-
             videoSource = src;
+            videoCaptions = new() { setCaptions? Path.ChangeExtension(src, ".vtt") : "" };
             await videoRef.PausePlayback();
             await SendState();
 
@@ -220,6 +232,7 @@
             LastUpdated = DateTimeOffset.UtcNow,
             IsPlaying = !videoState.Paused,
             Source = videoSource,
+            Captions = videoCaptions,
             VideoTimestamp = videoState.CurrentTime
         };
     }
@@ -234,6 +247,7 @@
         {
             Console.WriteLine($"Client: Setting video source.");
             videoSource = newstate.Source;
+            videoCaptions = newstate.Captions;
 
             if(!string.IsNullOrEmpty(videoSource))
             {
@@ -260,7 +274,7 @@
             }
         @* } *@
         lastUpdateRecieved = DateTimeOffset.Now;
-        @* StateHasChanged(); *@
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task SendState()

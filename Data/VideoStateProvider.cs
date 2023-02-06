@@ -8,6 +8,7 @@ public class VideoStateDto
 {
     public bool IsPlaying {get; set;}
     public string? Source {get; set;}
+    public List<string> Captions {get; set;}
     public double VideoTimestamp {get; set;}
     public DateTimeOffset LastUpdated {get; set;}
     public DateTimeOffset GlobalTime {get; set;}

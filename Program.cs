@@ -5,6 +5,7 @@ using VideoHome.Server.Hubs;
 using Microsoft.AspNetCore.ResponseCompression;
 using MatBlazor;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.AspNetCore.StaticFiles;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,9 +62,13 @@ app.MapHub<SyncVideoHub>("/syncvideohub");
 
 app.MapFallbackToPage("/_Host");
 
+var extensionProvider = new FileExtensionContentTypeProvider();
+extensionProvider.Mappings.Add(".vtt", "text/vtt");
+
 app.UseStaticFiles(new StaticFileOptions() {
     FileProvider = new PhysicalFileProvider(builder.Configuration.GetSection("VideoMapping")["VideoPath"]),
-    RequestPath = new PathString(builder.Configuration.GetSection("VideoMapping")["MapTo"])
+    RequestPath = new PathString(builder.Configuration.GetSection("VideoMapping")["MapTo"]),
+    ContentTypeProvider = extensionProvider
 });
 
 app.Run();
