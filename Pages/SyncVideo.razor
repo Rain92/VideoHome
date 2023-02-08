@@ -1,4 +1,4 @@
-﻿@page "/"
+@page "/"
 @implements IAsyncDisposable
 @inject NavigationManager Navigation
 @using Microsoft.AspNetCore.SignalR.Client
@@ -193,8 +193,10 @@
     private void RefreshFileTree()
     {
 
-        TreeViewItems = FileTreeViewItem.EnumerateFilesWithRootMapping(Configuration.GetSection("VideoMapping")["VideoPath"], 
-                Configuration.GetSection("VideoMapping")["MapTo"]);
+        TreeViewItems = FileTreeViewItem.EnumerateFilesWithRootMapping(
+                Configuration.GetSection("VideoMapping")["VideoPath"], 
+                Configuration.GetSection("VideoMapping")["MapTo"],
+                supportedFormats);
 
     }
 
@@ -310,7 +312,7 @@
         @* StateHasChanged(); *@
     }
 
-    private List<FileTreeViewItem> TreeViewItems;
+    private List<FileTreeViewItem> TreeViewItems = new();
 
     public async ValueTask DisposeAsync()
     {

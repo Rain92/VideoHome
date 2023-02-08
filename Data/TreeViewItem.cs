@@ -14,10 +14,10 @@ public class FileTreeViewItem
     public string? Path { get; set; }
     public List<FileTreeViewItem>? Children { get; set; }
 
-    public static List<FileTreeViewItem> EnumerateFilesWithRootMapping(string root, string rootmapping)
-        => EnumerateFiles(new DirectoryInfo(root), root, rootmapping);
+    public static List<FileTreeViewItem> EnumerateFilesWithRootMapping(string root, string rootmapping, IEnumerable<string> fileEndings)
+        => EnumerateFiles(new DirectoryInfo(root), root, rootmapping, fileEndings);
 
-    private static List<FileTreeViewItem> EnumerateFiles(DirectoryInfo path, string root, string rootmapping)
+    private static List<FileTreeViewItem> EnumerateFiles(DirectoryInfo path, string root, string rootmapping, IEnumerable<string> fileEndings)
     {
         FileTreeViewItem item = new FileTreeViewItem
         {
@@ -29,10 +29,11 @@ public class FileTreeViewItem
 
         foreach (DirectoryInfo dirInfo in path.GetDirectories().OrderBy(d => d.Name))
         {
-            item.Children.AddRange(EnumerateFiles(dirInfo, root, rootmapping));
+            item.Children.AddRange(EnumerateFiles(dirInfo, root, rootmapping, fileEndings));
         }
 
-        foreach (FileInfo fi in path.GetFiles("*.*").OrderBy(fi => fi.Name))
+        foreach (FileInfo fi in path.GetFiles("*.*").OrderBy(fi => fi.Name)
+                                    .Where(f => fileEndings == null || fileEndings.Any(e => f.Name.EndsWith(e))))
         {
             FileTreeViewItem file = new FileTreeViewItem
             {
