@@ -1,10 +1,10 @@
 ﻿@page "/counter"
 @attribute [Authorize]
+@implements IAsyncDisposable
 @using Microsoft.AspNetCore.SignalR.Client
 @using VideoHome.Services;
 @inject NavigationManager Navigation
 @inject CounterService CounterService;
-@implements IAsyncDisposable
 
 
 <PageTitle>Click Counter</PageTitle>

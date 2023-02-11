@@ -1,7 +1,8 @@
-﻿@using VideoHome.Data
+﻿@page "/login"
+@using VideoHome.Data
 @using VideoHome.Services
+@inject NavigationManager NavigationManager
 @inject WebsiteAuthenticator WebsiteAuthenticator
-@page "/login"
 
 <AuthorizeView Context="Account">
     <NotAuthorized>
@@ -54,9 +55,14 @@
     private async Task TryLogin()
     {
         loading = true;
-        var res = await WebsiteAuthenticator.LoginAsync(_user);
+        var success = await WebsiteAuthenticator.LoginAsync(_user);
         loading = false;
-        error = res ? "" : "Wrong credentials!";
+        error = success ? "" : "Wrong credentials!";
+
+        if(success)
+        {
+            NavigationManager.NavigateTo("/");
+        }
     }
 
     private async Task TryLogout()

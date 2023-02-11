@@ -1,4 +1,4 @@
-﻿@page "/"
+@page "/"
 @attribute [Authorize]
 @implements IAsyncDisposable
 @inject NavigationManager Navigation
@@ -26,7 +26,7 @@
         <div>Watch Youtube stream:</div>
         <div class="file-input-zone">
             <input type="text" @bind="streamInputBoxContent" />
-            <button onclick="@PlayYoutube">Play</button>
+            <button class="btn btn-primary" onclick="@PlayYoutube">Play</button>
         </div><br>
 
         <div>Local Files:</div><br>
