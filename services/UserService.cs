@@ -17,9 +17,12 @@ namespace VideoHome.Services
         public UserService(ILogger<WebsiteAuthenticator> logger)
         {
             _logger = logger;
+            
+            _logger.LogDebug("Loading users.");
             try
             {
-                _users = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(USERFILEPATH)) ?? new();
+                var path = Path.Join(AppContext.BaseDirectory, USERFILEPATH);
+                _users = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path)) ?? new();
                 _logger.LogDebug("Loaded users:");
                 foreach(var u in _users.Keys)
                 {
