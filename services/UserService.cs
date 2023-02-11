@@ -5,28 +5,26 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Text.Json;
 using VideoHome.Data;
-using System.Diagnostics;
 
 namespace VideoHome.Services
 {
     public class UserService
     {
-        private readonly ILogger _logger;
         const string USERFILEPATH = "users.json";
+        private readonly ILogger _logger;
         Dictionary<string, string> _users;
-        public UserService(ILogger<WebsiteAuthenticator> logger)
+        public UserService(ILogger<UserService> logger)
         {
             _logger = logger;
-            
-            _logger.LogDebug("Loading users.");
+
+            _logger.LogInformation("Loading users:");
             try
             {
                 var path = Path.Join(AppContext.BaseDirectory, USERFILEPATH);
                 _users = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path)) ?? new();
-                _logger.LogDebug("Loaded users:");
                 foreach(var u in _users.Keys)
                 {
-                    _logger.LogDebug(u);
+                    _logger.LogInformation(u);
                 }
             }
             catch(Exception e)
@@ -39,7 +37,7 @@ namespace VideoHome.Services
         public bool CheckCredentials(User user)
         {
             var validUser = _users.TryGetValue(user.Username, out var pw) && pw == user.Password;
-            _logger.LogDebug($"Checking credentials: {user.Username} {user.Password} -> {validUser}");
+            _logger.LogInformation($"Checking credentials: {user.Username} {user.Password} -> {validUser}");
             return validUser;
         }
 
