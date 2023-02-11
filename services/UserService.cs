@@ -17,15 +17,11 @@ namespace VideoHome.Services
         {
             _logger = logger;
 
-            _logger.LogInformation("Loading users:");
             try
             {
                 var path = Path.Join(AppContext.BaseDirectory, USERFILEPATH);
                 _users = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path)) ?? new();
-                foreach(var u in _users.Keys)
-                {
-                    _logger.LogInformation(u);
-                }
+                
             }
             catch(Exception e)
             {
@@ -37,7 +33,6 @@ namespace VideoHome.Services
         public bool CheckCredentials(User user)
         {
             var validUser = _users.TryGetValue(user.Username, out var pw) && pw == user.Password;
-            _logger.LogInformation($"Checking credentials: {user.Username} {user.Password} -> {validUser}");
             return validUser;
         }
 
