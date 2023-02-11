@@ -10,11 +10,13 @@ namespace VideoHome.Services
 {
     public class WebsiteAuthenticator : AuthenticationStateProvider
     {
+        private readonly ILogger _logger;
         private readonly ProtectedLocalStorage _protectedLocalStorage;
         private readonly UserService _userService;
 
-        public WebsiteAuthenticator(ProtectedLocalStorage protectedLocalStorage, UserService userService)
+        public WebsiteAuthenticator(ProtectedLocalStorage protectedLocalStorage, UserService userService, ILogger<WebsiteAuthenticator> logger)
         {
+            _logger = logger;
             _protectedLocalStorage = protectedLocalStorage;
             _userService = userService;
         }

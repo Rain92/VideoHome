@@ -11,26 +11,33 @@ namespace VideoHome.Services
 {
     public class UserService
     {
+        private readonly ILogger _logger;
         const string USERFILEPATH = "users.json";
         Dictionary<string, string> _users;
-        public UserService()
+        public UserService(ILogger<WebsiteAuthenticator> logger)
         {
+            _logger = logger;
             try
             {
                 _users = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(USERFILEPATH)) ?? new();
+                _logger.LogDebug("Loaded users:");
                 foreach(var u in _users.Keys)
-                    Debug.WriteLine(u);
+                {
+                    _logger.LogDebug(u);
+                }
             }
             catch(Exception e)
             {
-                Debug.WriteLine(e.Message);
+                _logger.LogError(e.Message);
                 _users = new();
             }
         }
 
         public bool CheckCredentials(User user)
         {
-            return  _users.TryGetValue(user.Username, out var pw) && pw == user.Password;
+            var validUser = _users.TryGetValue(user.Username, out var pw) && pw == user.Password;
+            _logger.LogDebug($"Checking credentials: {user.Username} {user.Password} -> {validUser}");
+            return validUser;
         }
 
         public List<string> GetUserRoles(User user)
