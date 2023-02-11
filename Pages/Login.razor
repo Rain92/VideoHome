@@ -1,0 +1,44 @@
+﻿@using VideoHome.Data
+@using VideoHome.Services
+@inject WebsiteAuthenticator WebsiteAuthenticator
+@page "/login"
+
+<AuthorizeView Context="Account">
+    <NotAuthorized>
+        <EditForm Model="_user" Context="Login">
+            <div>
+                <label> Username: 
+                    <InputText @bind-Value="_user.Username"></InputText>
+                </label>
+            </div>
+            <div>
+                <label> Password:
+                    <InputText type="password" @bind-Value="_user.Password"></InputText>
+                </label>
+            </div>
+            <div>
+                <button @onclick="TryLogin">Submit</button>
+            </div>
+        </EditForm>
+    </NotAuthorized>
+    <Authorized>
+        <button type="button" class="btn btn-primary" @onclick="TryLogout">Logout</button>
+    </Authorized>
+    <Authorizing>
+        Authorizing in process...
+    </Authorizing>
+</AuthorizeView>
+
+@code {
+    private User _user { get; set; } = new();
+
+    private async Task TryLogin()
+    {
+        await WebsiteAuthenticator.LoginAsync(_user);
+    }
+
+    private async Task TryLogout()
+    {
+        await WebsiteAuthenticator.LogoutAsync();
+    }
+}

@@ -1,9 +1,4 @@
-namespace VideoHome.Data;
-using System.IO;
-using System.Diagnostics;
-using System.Threading.Tasks;
-using System.Threading;
-
+namespace VideoHome.Services;
 public class VideoStateDto
 {
     public bool IsPlaying {get; set;}

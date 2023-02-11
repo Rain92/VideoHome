@@ -1,9 +1,11 @@
-@page "/"
+﻿@page "/"
+@attribute [Authorize]
 @implements IAsyncDisposable
 @inject NavigationManager Navigation
 @using Microsoft.AspNetCore.SignalR.Client
 @inject IJSRuntime JS
 @using VideoHome.Data;
+@using VideoHome.Services;
 @using Excubo.Blazor.TreeViews
 @using System.Diagnostics
 @using SoloX.BlazorLayout.Core
@@ -14,6 +16,7 @@
 @using YoutubeExplode;
 @using YoutubeExplode.Videos.Streams;
 @inject ILogger<SyncVideo> Logger
+
 
 <link rel="stylesheet" href="css/plyr.css" />
 

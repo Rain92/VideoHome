@@ -1,11 +1,14 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using VideoHome.Data;
+using VideoHome.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using VideoHome.Server.Hubs;
 using Microsoft.AspNetCore.ResponseCompression;
 using MatBlazor;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.AspNetCore.Components.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +31,10 @@ builder.Services.AddServerSideBlazor(
         options.StreamBufferCapacity = 30;
     });
 
+builder.Services.AddSingleton<UserService>();
+builder.Services.AddScoped<WebsiteAuthenticator>();
+builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<WebsiteAuthenticator>());
+
 builder.Services.AddResponseCompression(opts =>
 {
 	opts.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
@@ -36,6 +43,7 @@ builder.Services.AddResponseCompression(opts =>
 builder.Services.AddMatBlazor();
 builder.Services.AddSingleton<CounterService>();
 builder.Services.AddSingleton<VideoStateProvider>();
+
 #endregion
 
 var app = builder.Build();
@@ -55,8 +63,10 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapBlazorHub();
-app.MapHub<ChatHub>("/chathub");
 app.MapHub<CounterHub>("/counterhub");
 app.MapHub<SyncVideoHub>("/syncvideohub");
 

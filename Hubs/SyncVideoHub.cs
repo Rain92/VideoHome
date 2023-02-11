@@ -1,5 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR;
-using VideoHome.Data;
+using VideoHome.Services;
 using System.Diagnostics;
 
 namespace VideoHome.Server.Hubs
