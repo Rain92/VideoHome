@@ -32,9 +32,8 @@ public class CounterService
             var str = File.ReadAllText(path);
             _globalCounter = int.Parse(str);
         }
-        catch(Exception e)
+        catch
         {
-            Debug.WriteLine(e.Message);
             _globalCounter = 0;
         }
     }

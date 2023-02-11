@@ -5,21 +5,38 @@
 
 <AuthorizeView Context="Account">
     <NotAuthorized>
-        <EditForm Model="_user" Context="Login">
-            <div>
-                <label> Username: 
-                    <InputText @bind-Value="_user.Username"></InputText>
-                </label>
+        <div class="col-md-6 offset-md-3 mt-5">
+            <div class="card">
+                <h4 class="card-header">Login</h4>
+                <div class="card-body">
+                    <EditForm Model="@_user" OnValidSubmit="TryLogin">
+                        <DataAnnotationsValidator />
+                        <div class="form-group layout-margin-top">
+                            <label>Username</label>
+                            <InputText @bind-Value="_user.Username" class="form-control" />
+                            <ValidationMessage For="@(() => _user.Username)" />
+                        </div>
+                        <div class="form-group layout-margin-top">
+                            <label>Password</label>
+                            <InputText @bind-Value="_user.Password" type="password" class="form-control" />
+                            <ValidationMessage For="@(() => _user.Password)" />
+                        </div>
+                        <button class="btn btn-primary layout-margin-top">
+                            @if (loading)
+                            {
+                                <span class="spinner-border spinner-border-sm mr-1"></span>
+                            }
+                            Login
+                        </button>
+                        @if (!string.IsNullOrEmpty(error))
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">@error</div>
+                        }
+                    </EditForm>
+                </div>
             </div>
-            <div>
-                <label> Password:
-                    <InputText type="password" @bind-Value="_user.Password"></InputText>
-                </label>
-            </div>
-            <div>
-                <button @onclick="TryLogin">Submit</button>
-            </div>
-        </EditForm>
+        </div>
+
     </NotAuthorized>
     <Authorized>
         <button type="button" class="btn btn-primary" @onclick="TryLogout">Logout</button>
@@ -31,10 +48,15 @@
 
 @code {
     private User _user { get; set; } = new();
+    private string error = "";
+    private bool loading = false;
 
     private async Task TryLogin()
     {
-        await WebsiteAuthenticator.LoginAsync(_user);
+        loading = true;
+        var res = await WebsiteAuthenticator.LoginAsync(_user);
+        loading = false;
+        error = res ? "" : "Wrong credentials!";
     }
 
     private async Task TryLogout()

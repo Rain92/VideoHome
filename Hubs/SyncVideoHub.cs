@@ -1,17 +1,20 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
 using VideoHome.Services;
-using System.Diagnostics;
 
 namespace VideoHome.Server.Hubs
 {
+    // [Authorize]
     public class SyncVideoHub : Hub
     {
+        private readonly ILogger _logger;
         private const int NUMPINGS = 5;
         private const double UPDATE_HYSTESIS_SECONDS = 1;
 
         private readonly VideoStateProvider _stateProvider;
-        public SyncVideoHub(VideoStateProvider stateProvider)
+        public SyncVideoHub(VideoStateProvider stateProvider, ILogger<WebsiteAuthenticator> logger)
         {
+            _logger = logger;
             _stateProvider = stateProvider;
         }
         
@@ -26,7 +29,7 @@ namespace VideoHome.Server.Hubs
             _stateProvider.ConnectedClients.Add(Context.ConnectionId, 200);
             await Clients.Caller.SendAsync("Ping", 1, DateTimeOffset.UtcNow);
 
-            Console.WriteLine($"User connected: {Context.ConnectionId}. Number of users is {_stateProvider.NumConnectedClients}");
+            _logger.LogInformation($"User connected: {Context.ConnectionId}. Number of users is {_stateProvider.NumConnectedClients}");
         
             await base.OnConnectedAsync();
         }
@@ -35,7 +38,7 @@ namespace VideoHome.Server.Hubs
         {
             _stateProvider.ConnectedClients.Remove(Context.ConnectionId);
 
-            Console.WriteLine($"User disconnected: {Context.ConnectionId}. Number of users is {_stateProvider.NumConnectedClients}");
+            _logger.LogInformation($"User disconnected: {Context.ConnectionId}. Number of users is {_stateProvider.NumConnectedClients}");
         
             await base.OnDisconnectedAsync(exception);
         }
@@ -54,7 +57,7 @@ namespace VideoHome.Server.Hubs
 
                 _stateProvider.ConnectedClients[Context.ConnectionId] = latency;
 
-                Console.WriteLine($"Client {Context.ConnectionId} latency was measured at {latency}ms");
+                _logger.LogInformation($"Client {Context.ConnectionId} latency was measured at {latency}ms");
             }
         }
 
@@ -63,19 +66,19 @@ namespace VideoHome.Server.Hubs
             if (newstate.LastUpdated < _stateProvider.CurrentVideoState.LastUpdated)
             {
                 // stale update, ignore
-                Console.WriteLine($"Stale state recieved, ignoring.");
+                _logger.LogInformation($"Stale state recieved, ignoring.");
                 return;
             }
             var td = (_stateProvider.CurrentVideoState.LastUpdated - newstate.LastUpdated).TotalSeconds;
             // if (td > 0 && td < UPDATE_HYSTESIS_SECONDS)
             // {
             //     // update is too soon, ignore
-            //     Console.WriteLine($"State recieved too soon {td}, ignoring.");
+            //     _logger.LogInformation($"State recieved too soon {td}, ignoring.");
             //     return;
             // }
 
             _stateProvider.CurrentVideoState = newstate;
-            Console.WriteLine($"State recieved. Updating other clients.");
+            _logger.LogInformation($"State recieved. Updating other clients.");
             await Clients.Others.SendAsync("ReceiveState", _stateProvider.CurrentVideoState);
 
         }

@@ -41,15 +41,15 @@ namespace VideoHome.Services
                     }
                 }
             }
-            catch
+            catch (Exception e)
             {
-
+                _logger.LogError(e.Message);
             }
 
             return new AuthenticationState(principal);
         }
 
-        public async Task LoginAsync(User user)
+        public async Task<bool> LoginAsync(User user)
         {
             var isSuccess = _userService.CheckCredentials(user);
             var principal = new ClaimsPrincipal();
@@ -62,6 +62,8 @@ namespace VideoHome.Services
             }
 
             NotifyAuthenticationStateChanged(Task.FromResult(new AuthenticationState(principal)));
+
+            return isSuccess;
         }
 
         public async Task LogoutAsync()

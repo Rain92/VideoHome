@@ -1,9 +1,10 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using VideoHome.Services;
-using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Authorization;
 
 namespace VideoHome.Server.Hubs
 {
+    // [Authorize]
     public class CounterHub : Hub
     {
 

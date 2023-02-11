@@ -15,7 +15,7 @@
 @using Microsoft.Extensions.Logging
 @using YoutubeExplode;
 @using YoutubeExplode.Videos.Streams;
-@inject ILogger<SyncVideo> Logger
+@inject ILogger<SyncVideo> logger
 
 
 <link rel="stylesheet" href="css/plyr.css" />
@@ -104,10 +104,10 @@
         if(url == null || !url.Contains("youtube."))
             return;
             
-        Console.WriteLine($"Getting youtube video for {url}");
+        logger.LogInformation($"Getting youtube video for {url}");
         var streamManifest = await youtube.Videos.Streams.GetManifestAsync(url);
         var streamInfo = streamManifest.GetMuxedStreams().GetWithHighestVideoQuality();
-        Console.WriteLine(streamInfo.Url);
+        logger.LogInformation(streamInfo.Url);
         await SetVideoSource(streamInfo.Url, false);
     }
 
@@ -115,12 +115,12 @@
     {
         if (item.ItemType == FileTreeViewItem.NodeType.File)
         {
-            Debug.WriteLine($"Item pressed: {item.Path}");
+            logger.LogInformation($"Item pressed: {item.Path}");
             await SetVideoSource(item.Path, true);
         }
         else
         {
-            Debug.WriteLine($"Folder clicked!");
+            logger.LogInformation($"Folder clicked!");
         }
     }
 
@@ -148,7 +148,10 @@
                         "import", "./plyr-loder.js");
             await Main.InvokeVoidAsync("load", "playerx").AsTask();
 
-            await hubConnection.SendAsync("RequestState");
+            if (hubConnection is not null)
+            {
+                await hubConnection.SendAsync("RequestState");
+            }
         }
     }
 
@@ -185,8 +188,7 @@
             }
             catch (Exception ex)
             {
-                Logger.LogError("File: {Filename} Error: {Error}", 
-                    file.Name, ex.Message);
+                logger.LogError("File: {Filename} Error: {Error}", file.Name, ex.Message);
             }
         }
 
@@ -195,10 +197,9 @@
     }
     private void RefreshFileTree()
     {
-
         TreeViewItems = FileTreeViewItem.EnumerateFilesWithRootMapping(
-                Configuration.GetSection("VideoMapping")["VideoPath"], 
-                Configuration.GetSection("VideoMapping")["MapTo"],
+                Configuration.GetSection("VideoMapping")["VideoPath"] ?? "", 
+                Configuration.GetSection("VideoMapping")["MapTo"] ?? "",
                 supportedFormats);
 
     }
@@ -246,11 +247,11 @@
     {
         if (videoRef is null)
             return;
-        Console.WriteLine($"Client: State recieved. {newstate.Source?.Split('/').LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
+        logger.LogInformation($"Client: State recieved. {newstate.Source?.Split('/').LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
 
         if(newstate.Source != videoSource)
         {
-            Console.WriteLine($"Client: Setting video source.");
+            logger.LogInformation($"Client: Setting video source.");
             videoSource = newstate.Source;
             videoCaptions = newstate.Captions;
 
@@ -262,19 +263,19 @@
         }
         if(Math.Abs(newstate.VideoTimestamp - videoState.CurrentTime) > 0.5)
         {
-            Console.WriteLine($"Client: Setting time.");
+            logger.LogInformation($"Client: Setting time.");
             await videoRef.SetCurrentTimeAsync(newstate.VideoTimestamp); 
         }
         @* if (newstate.IsPlaying == videoState.Paused)
         { *@
             if (newstate.IsPlaying)
             {
-                Console.WriteLine($"Client: Pausing playback.");
+                logger.LogInformation($"Client: Pausing playback.");
                 await videoRef.StartPlayback();
             }
             else
             {
-                Console.WriteLine($"Client: Pausing playback.");
+                logger.LogInformation($"Client: Pausing playback.");
                 await videoRef.PausePlayback();
             }
         @* } *@
@@ -288,9 +289,12 @@
             return;
 
         VideoStateDto newstate = GetStateDto(); 
-        Console.WriteLine($"Client: Sending state. {newstate.Source?.Split('/')?.LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
+        logger.LogInformation($"Client: Sending state. {newstate.Source?.Split('/')?.LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
 
-        await hubConnection.SendAsync("UpdateState", newstate);
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("UpdateState", newstate);
+        }
     }
 
     private async void OnEvent(VideoEventData videoData)
@@ -305,7 +309,7 @@
             case VideoEvents.Pause:
             case VideoEvents.Seeking:
             case VideoEvents.Seeked:
-                Console.WriteLine($"Client: OnEvent: {videoData.EventName} {videoState.CurrentTime}");
+                logger.LogInformation($"Client: OnEvent: {videoData.EventName} {videoState.CurrentTime}");
                 await SendState();
                 break;
 
@@ -319,7 +323,7 @@
 
     public async ValueTask DisposeAsync()
     {
-        Console.WriteLine("Client: Disposing razor page.");
+        logger.LogInformation("Client: Disposing razor page.");
         if (hubConnection is not null)
         {
             await hubConnection.DisposeAsync();
