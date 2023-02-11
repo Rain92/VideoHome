@@ -20,5 +20,13 @@
     <None Update="users.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <PropertyGroup Condition=" '$(Configuration)' != '' AND '$(Configuration)' == 'Debug' ">
+    <EnvironmentName>Development</EnvironmentName>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)' != '' AND '$(Configuration)' == 'Release' ">
+    <Optimize>true</Optimize>
+    <EnvironmentName>Production</EnvironmentName>
+  </PropertyGroup>
 
 </Project>
