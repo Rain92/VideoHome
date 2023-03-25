@@ -27,29 +27,21 @@ namespace VideoHome.Server.Hubs
 
         public override async Task OnConnectedAsync()
         {
-            // var authstate = await _authenticationStateProvider.GetAuthenticationStateAsync();
-            // var username = authstate.User?.Identity?.Name ?? "Andi";
-            var username = "Andi";
-            if (username == null)
-            {
-                throw new Exception("No user authenticated!");
-            }
-
-            _stateProvider.AddUser(Context.ConnectionId, username);
-          
-            _logger.LogInformation($"User connected: {_stateProvider.GetUser(Context.ConnectionId)}. Number of users is {_stateProvider.NumConnectedClients}");
-
+            _logger.LogInformation($"User connected: {Context.ConnectionId}.");
             await base.OnConnectedAsync();
         }
-
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
             _logger.LogInformation($"User disconnected:  {_stateProvider.GetUser(Context.ConnectionId)}. Number of users is {_stateProvider.NumConnectedClients}");
-
             _stateProvider.RemoveUser(Context.ConnectionId);
-
             await base.OnDisconnectedAsync(exception);
+        }
+
+        public async Task RegisterUser(string username)
+        {
+            _stateProvider.AddUser(Context.ConnectionId, username);
+            _logger.LogInformation($"User registered: {Context.ConnectionId} {_stateProvider.GetUser(Context.ConnectionId)}. Number of users is {_stateProvider.NumConnectedClients}");
         }
 
         public async Task Pong(int n, DateTimeOffset initialtime)
@@ -68,7 +60,6 @@ namespace VideoHome.Server.Hubs
                 var latency = (int)(timediff.TotalMilliseconds / (NUMPINGS * 2));
 
                 _stateProvider.UpdateUserLatency(Context.ConnectionId, latency);
-
                 _logger.LogInformation($"Client {_stateProvider.GetUser(Context.ConnectionId)} latency was measured at {latency}ms");
             }
         }

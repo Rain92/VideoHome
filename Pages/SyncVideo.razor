@@ -1,9 +1,7 @@
 ﻿@page "/"
 @attribute [Authorize]
 @implements IAsyncDisposable
-@inject NavigationManager Navigation
 @using Microsoft.AspNetCore.SignalR.Client
-@inject IJSRuntime JS
 @using VideoHome.Data;
 @using VideoHome.Services;
 @using Excubo.Blazor.TreeViews
@@ -11,11 +9,15 @@
 @using SoloX.BlazorLayout.Core
 @using SoloX.BlazorLayout.Containers.Dock
 @using Microsoft.Extensions.Configuration
-@inject IConfiguration Configuration;
 @using Microsoft.Extensions.Logging
 @using YoutubeExplode;
 @using YoutubeExplode.Videos.Streams;
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject IConfiguration Configuration
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @inject ILogger<SyncVideo> logger
+
 
 <DockContainer Fill="Fill.Full" Proportion="25">
     <DockPanel Class="px-4" Side="Side.Right">
@@ -216,6 +218,10 @@
         hubConnection.On<VideoStateDto>("ReceiveState", StateRecieved);
 
         await hubConnection.StartAsync();
+
+        var authstate = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var username = authstate.User?.Identity?.Name ?? "Invalid";
+        await hubConnection.SendAsync("RegisterUser", username);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
