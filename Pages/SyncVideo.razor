@@ -17,9 +17,6 @@
 @using YoutubeExplode.Videos.Streams;
 @inject ILogger<SyncVideo> logger
 
-
-<link rel="stylesheet" href="css/plyr.css" />
-
 <DockContainer Fill="Fill.Full" Proportion="25">
     <DockPanel Class="px-4" Side="Side.Right">
 
@@ -60,12 +57,11 @@
 
     <div class="d-flex flex-column p-2 align-content-center">
         <div>@videoSourceTitle</div>
-        <BlazoredVideo @ref="videoRef"  id="playerx"
+        <BlazoredVideo @ref="videoRef"
             width="1280" height="720" 
             controls playsinline
             EventFired="OnEvent"
-            VideoEventOptions="options" 
-            data-plyr-config='{ "disableContextMenu": "false" }'>
+            VideoEventOptions="options" >
             <source src=@videoSource type="video/mp4" />
             <!-- Caption files -->
             @if (videoCaptions != null && videoCaptions.Any())
@@ -102,6 +98,7 @@
     List<string> videoCaptions = new() {""};
 
     private YoutubeClient youtube = new();
+    DotNetObjectReference<SyncVideo> dotnetRef;
 
     private async void PlayYoutube()
     {
@@ -159,14 +156,13 @@
 
                 if(!supportedFormats.Any(fo => path.EndsWith(fo)))
                 {
-                                        continue;
+                    continue;
                 }
                 if(File.Exists(path))
                 {
                     await JS.InvokeVoidAsync("alert", $"File called {file.Name} already exists!");
                     continue;
                 }
-
 
                 await using FileStream fs = new(path, FileMode.Create);
                 await file.OpenReadStream(maxFileSize).CopyToAsync(fs);
@@ -192,6 +188,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        dotnetRef = DotNetObjectReference.Create(this);
+
         RefreshFileTree();
         var allOptionsEnabled = new VideoStateOptions() { All = true };
         foreach (var item in (VideoEvents[])(Enum.GetValues(typeof(VideoEvents))))
@@ -203,14 +201,16 @@
         }
 
         hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/syncvideohub"))
+            .WithUrl(Navigation.ToAbsoluteUri("/syncvideohub"), o => 
+            {
+                o.UseDefaultCredentials = true;
+            })
             .Build();
 
         hubConnection.On<int, DateTimeOffset>("Ping", async (n, timestamp) =>
         {
-            @* await hubConnection.SendAsync("Pong", n, timestamp); *@
-            @* await JS.InvokeVoidAsync("Ping", n, timestamp); *@
-                await JSPing.InvokeVoidAsync("ping", dotnetRef, n, DateTimeOffset.UtcNow).AsTask(); 
+            var dotnetRef = DotNetObjectReference.Create(this); 
+            await JS.InvokeVoidAsync("ping", dotnetRef, n, timestamp).AsTask(); 
         });
 
         hubConnection.On<VideoStateDto>("ReceiveState", StateRecieved);
@@ -218,29 +218,13 @@
         await hubConnection.StartAsync();
     }
 
-    IJSObjectReference JSPing;
-    DotNetObjectReference<SyncVideo> dotnetRef;
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        @* IJSObjectReference Plyr;
-        IJSObjectReference Main;     *@
-
         if (firstRender)
-        {
-            @* Plyr = await JS.InvokeAsync<IJSObjectReference>(
-                        "import", "./plyr.js");
-            Main = await JS.InvokeAsync<IJSObjectReference>(
-                        "import", "./plyr-loder.js");
-            await Main.InvokeVoidAsync("load", "playerx").AsTask(); *@
-
+        {            
             if (hubConnection is not null)
             {
-                dotnetRef = DotNetObjectReference.Create(this); 
-                JSPing = await JS.InvokeAsync<IJSObjectReference>(
-                            "import", "./ping.js");
-                await JSPing.InvokeVoidAsync("ping", dotnetRef, 0, DateTimeOffset.UtcNow).AsTask(); 
-
+                await JS.InvokeVoidAsync("ping", dotnetRef, 0, DateTimeOffset.UtcNow).AsTask();
                 await hubConnection.SendAsync("RequestState");
             }
             else 
@@ -286,6 +270,7 @@
         if(newstate.Source != videoSource)
         {
             logger.LogInformation($"Client: Setting video source.");
+            videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
             videoSource = newstate.Source;
             videoCaptions = newstate.Captions;
 

@@ -25,7 +25,6 @@ namespace VideoHome.Server.Hubs
             await Clients.Caller.SendAsync("ReceiveState", _stateProvider.CurrentVideoState);
         }
 
-
         public override async Task OnConnectedAsync()
         {
             // var authstate = await _authenticationStateProvider.GetAuthenticationStateAsync();
