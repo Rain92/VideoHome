@@ -1,7 +1,7 @@
 using VideoHome.Services;
 using VideoHome.Server.Hubs;
 using Microsoft.AspNetCore.ResponseCompression;
-using MatBlazor;
+using MudBlazor.Services;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -37,7 +37,12 @@ services.AddResponseCompression(opts =>
     opts.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
         new[] { "application/octet-stream" });
 });
-services.AddMatBlazor();
+// services.AddMatBlazor();
+services.AddMudServices();
+services.AddBootstrapBlazor(options =>
+    {
+        options.ToastDelay = 4000;
+    });
 services.AddSingleton<CounterService>();
 services.AddSingleton<VideoStateProvider>();
 

@@ -26,3 +26,12 @@
 .error .mud-input-helper-text {
     color: var(--mud-palette-error);
 }
+
+.youtube-input {
+  padding: 5px;
+  margin: 5px;
+}
+
+.mudpaper {
+    Width: 150px;
+}

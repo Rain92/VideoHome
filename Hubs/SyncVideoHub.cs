@@ -35,6 +35,7 @@ namespace VideoHome.Server.Hubs
         {
             _logger.LogInformation($"User disconnected:  {_stateProvider.GetUser(Context.ConnectionId)}. Number of users is {_stateProvider.NumConnectedClients}");
             _stateProvider.RemoveUser(Context.ConnectionId);
+            await Clients.Caller.SendAsync("ConnectedUsersChanged", _stateProvider.ListConnectedUsers());
             await base.OnDisconnectedAsync(exception);
         }
 
@@ -42,6 +43,7 @@ namespace VideoHome.Server.Hubs
         {
             _stateProvider.AddUser(Context.ConnectionId, username);
             _logger.LogInformation($"User registered: {Context.ConnectionId} {_stateProvider.GetUser(Context.ConnectionId)}. Number of users is {_stateProvider.NumConnectedClients}");
+            await Clients.Caller.SendAsync("ConnectedUsersChanged", _stateProvider.ListConnectedUsers());
         }
 
         public async Task Pong(int n, DateTimeOffset initialtime)

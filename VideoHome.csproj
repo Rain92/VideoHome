@@ -7,11 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="BootstrapBlazor" Version="7.4.4" />
+    <PackageReference Include="BootstrapBlazor.FontAwesome" Version="7.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="7.0.2" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="7.0" />
-    <PackageReference Include="Excubo.Blazor.TreeViews" Version="3.1.0" />
-    <PackageReference Include="MatBlazor" Version="2.8.0" />
     <PackageReference Include="Blazored.Video" Version="1.0.1" />
+    <PackageReference Include="MudBlazor" Version="6.2.0" />
     <PackageReference Include="SoloX.BlazorLayout" Version="1.0.0-alpha.7" />
     <PackageReference Include="YoutubeExplode" Version="6.2.5" />
   </ItemGroup>

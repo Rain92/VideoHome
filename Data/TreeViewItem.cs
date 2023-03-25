@@ -1,5 +1,6 @@
 namespace VideoHome.Data;
 using System.IO;
+using BootstrapBlazor.Components;
 
 public class FileTreeViewItem
 {
@@ -10,38 +11,42 @@ public class FileTreeViewItem
     }
 
     public NodeType ItemType { get; set; }
-    public string? Text { get; set; }
     public string? Path { get; set; }
-    public List<FileTreeViewItem>? Children { get; set; }
 
-    public static List<FileTreeViewItem> EnumerateFilesWithRootMapping(string root, string rootmapping, IEnumerable<string> fileEndings)
+    public static List<TreeViewItem<FileTreeViewItem>> EnumerateFilesWithRootMapping(string root, string rootmapping, IEnumerable<string> fileEndings)
         => EnumerateFiles(new DirectoryInfo(root), root, rootmapping, fileEndings);
 
-    private static List<FileTreeViewItem> EnumerateFiles(DirectoryInfo path, string root, string rootmapping, IEnumerable<string> fileEndings)
+    private static List<TreeViewItem<FileTreeViewItem>> EnumerateFiles(DirectoryInfo path, string root, string rootmapping, IEnumerable<string> fileEndings)
     {
-        FileTreeViewItem item = new FileTreeViewItem
+        TreeViewItem<FileTreeViewItem> item = new (new FileTreeViewItem
         {
             ItemType = NodeType.Folder,
-            Text = path.Name,
             Path = path.FullName.Replace(root, rootmapping),
-            Children = new()
+        })
+        {
+            Text = path.Name,
+            Icon = "fa-solid fa-folder-open",
+            Items = new()
         };
 
         foreach (DirectoryInfo dirInfo in path.GetDirectories().OrderBy(d => d.Name))
         {
-            item.Children.AddRange(EnumerateFiles(dirInfo, root, rootmapping, fileEndings));
+            item.Items.AddRange(EnumerateFiles(dirInfo, root, rootmapping, fileEndings));
         }
 
         foreach (FileInfo fi in path.GetFiles("*.*").OrderBy(fi => fi.Name)
                                     .Where(f => fileEndings == null || fileEndings.Any(e => f.Name.EndsWith(e))))
         {
-            FileTreeViewItem file = new FileTreeViewItem
+            TreeViewItem<FileTreeViewItem> file = new (new FileTreeViewItem
             {
                 ItemType = NodeType.File,
-                Text = fi.Name,
                 Path = fi.FullName.Replace(root, rootmapping),
+            })
+            {
+                Text = fi.Name,
+                Icon = "fa-solid fa-file-video"
             };
-            item.Children.Add(file);
+            item.Items.Add(file);
         }
 
         return new() { item };

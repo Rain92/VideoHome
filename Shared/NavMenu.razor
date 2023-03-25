@@ -3,7 +3,16 @@
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="">Video Home</a>
+        <a class="navbar-brand" href="">
+            Video Homeee
+        </a>
+        <AuthorizeView>
+            <Authorized>
+                <div class="navbar-greeting">
+                    Hello @context.User.Identity.Name :3
+                </div>
+            </Authorized>
+        </AuthorizeView>
         <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
             <span class="navbar-toggler-icon"></span>
         </button>
@@ -12,7 +21,7 @@
 
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
     <nav class="flex-column">
-        <AuthorizeView Context="Account">
+        <AuthorizeView>
             <Authorized>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
@@ -31,10 +40,8 @@
                 </div> *@
                 <li class="nav-item px-3">
                     <NavLink class="nav-link" href="login" @onclick="@TryLogout">
-                        <span class="iconify-style iconify" 
-                        data-icon="material-symbols:door-open" 
-                         aria-hidden="true"
-                          data-width="28" data-height="28"></span> Logout
+                        <span class="iconify-style iconify" data-icon="material-symbols:door-open" aria-hidden="true"
+                            data-width="28" data-height="28"></span> Logout
                     </NavLink>
                 </li>
             </Authorized>

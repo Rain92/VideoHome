@@ -1,3 +1,4 @@
+using VideoHome.Data;
 namespace VideoHome.Services;
 public class VideoStateDto
 {
@@ -24,11 +25,11 @@ public class VideoStateProvider
     // maps the conneted clients to their username
     public Dictionary<string, VideoHomeUser> ConnectedClients { get; private set; } = new();
 
-    public List<(string, int)> ListConnectedUsers() =>
+    public List<UserConnectioncount> ListConnectedUsers() =>
                 ConnectedClients.Values
                 .Select(u => u.Username)
                 .GroupBy(u => u)
-                .Select(g => (g.Key, g.Count()))
+                .Select(g => new UserConnectioncount { Username = g.Key, NumConnctions = g.Count() })
                 .ToList();
 
     public VideoHomeUser GetUser(string connectionId)

@@ -11,6 +11,11 @@
     font-size: 1.1rem;
 }
 
+.navbar-greeting {
+    font-size: 0.7rem;
+    color: #d7d7d7;
+}
+
 .oi {
     width: 2rem;
     font-size: 1.1rem;

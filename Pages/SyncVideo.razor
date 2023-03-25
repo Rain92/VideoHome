@@ -4,8 +4,6 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @using VideoHome.Data;
 @using VideoHome.Services;
-@using Excubo.Blazor.TreeViews
-@using System.Diagnostics
 @using SoloX.BlazorLayout.Core
 @using SoloX.BlazorLayout.Containers.Dock
 @using Microsoft.Extensions.Configuration
@@ -17,69 +15,93 @@
 @inject IConfiguration Configuration
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject ILogger<SyncVideo> logger
+@inject ToastService ToastService
 
 
-<DockContainer Fill="Fill.Full" Proportion="25">
-    <DockPanel Class="px-4" Side="Side.Right">
-
-        <div>Watch Youtube stream:</div>
-        <div class="file-input-zone">
-            <input type="text" @bind="streamInputBoxContent" />
-            <button class="btn btn-primary" onclick="@PlayYoutube">Play</button>
-        </div><br>
-
-        <div>Local Files:</div><br>
-        @if (!isUploading)
-        {
-            <div class="file-input-zone">
-                Upload:
-                <InputFile OnChange="@UploadFiles" multiple title="Upload video" />
-            </div><br>
-        }
-        else
-        {
-            <div>Uploading...</div><br>
-        }
-        <TreeView Items="TreeViewItems" GetChildren="(item) => item.Children" InitiallyCollapsed="true">
-            <ItemTemplate>
-                <div @onclick="()=>ItemClicked(context.Item)" class="treeviewline">
-                    @if (context.Item.ItemType == FileTreeViewItem.NodeType.Folder)
-                    {
-                        <MatIcon Icon="folder" />
-                    }
-                    else
-                    {
-                        <MatIcon Icon="insert_drive_file" />
-                    }
-                    @context.Item.Text
-                </div>
-            </ItemTemplate>
-        </TreeView>
-    </DockPanel>
+<DockContainer Fill="Fill.Full" Proportion="75">
+    <DockPanel Class="px-4" Side="Side.Left"> 
 
     <div class="d-flex flex-column p-2 align-content-center">
         <div>@videoSourceTitle</div>
-        <BlazoredVideo @ref="videoRef"
-            width="1280" height="720" 
-            controls playsinline
-            EventFired="OnEvent"
-            VideoEventOptions="options" >
+        <BlazoredVideo @ref="videoRef" width="1280" height="720" controls playsinline EventFired="OnEvent"
+            VideoEventOptions="options">
             <source src=@videoSource type="video/mp4" />
             <!-- Caption files -->
             @if (videoCaptions != null && videoCaptions.Any())
             {
                 foreach (var cc in videoCaptions)
                 {
-                    <track kind="subtitles"
-                        label="English"
-                        srclang="en"
-                        src=@cc
-                        default />
+                    <track kind="subtitles" label="English" srclang="en" src=@cc default />
                 }
             }
         </BlazoredVideo>
     </div>
 
+    </DockPanel>
+    <DockPanel Class="px-4" Side="Side.Right"> 
+
+        <MudPaper Width="320px" >
+            <MudList Clickable="false">
+                <MudListSubheader>
+                    Connected Users
+                </MudListSubheader>
+                @foreach (var user in @userListItems)
+                {
+                    <MudListItem Text="@user" />
+                }
+            </MudList>
+        </MudPaper>
+        <br>
+
+        <MudPaper Width="320px">
+            <MudList Clickable="false">
+                <MudListSubheader>
+                    Watch Youtube stream
+                </MudListSubheader>
+                <MudListItem>
+                    <BootstrapInput 
+                    TValue="string" 
+                    PlaceHolder="Youtube URL" 
+                    @bind-Value="@streamInputBoxContent" />
+                    <button class="btn btn-primary" onclick="@PlayYoutube">Play</button>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+        <br>
+
+        <MudPaper Width="320px">
+            <MudList Clickable="false">
+                <MudListSubheader>
+                    Upload Video
+                </MudListSubheader>
+                <MudListItem>
+                    <ButtonUpload TValue="string" DisplayText="Upload" OnChange="@UploadFiles"
+                        ShowUploadFileList="false" BrowserButtonText="Upload"
+                        BrowserButtonIcon="fa-solid fa-cloud-arrow-up" class="mt-3"></ButtonUpload>
+                    @if (@isUploading)
+                    {
+                        <div>Uploading Video...</div>
+                    }
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+        <br>
+
+        <MudPaper Width="320px">
+            <MudList Clickable="false">
+                <MudListSubheader>
+                    Local Videos
+                </MudListSubheader>
+                <MudListItem>
+                    <TreeView TItem="FileTreeViewItem" 
+                    Items="@TreeViewItems" ShowIcon="true" 
+                    ClickToggleNode="true" 
+                    OnTreeItemClick="@ItemClicked" /> 
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+
+    </DockPanel>
 </DockContainer>
 
 
@@ -90,7 +112,7 @@
     private DateTimeOffset lastUpdateRecieved = DateTimeOffset.MinValue;
 
     private BlazoredVideo videoRef;
-    private string? streamInputBoxContent;
+    private string? streamInputBoxContent = "";
     private HubConnection? hubConnection;
     string? videoSource = "";
     string videoSourceTitle = "";
@@ -105,7 +127,7 @@
     private async void PlayYoutube()
     {
         var url = streamInputBoxContent;
-        if(url == null || !url.Contains("youtube."))
+        if(url == null || !url.Contains("youtube.") || !url.Contains("watch?v="))
             return;
             
         logger.LogInformation($"Getting youtube video for {url}");
@@ -115,8 +137,9 @@
         await SetVideoSource(streamInfo.Url, false);
     }
 
-    private async Task ItemClicked(FileTreeViewItem item)
+    private async Task ItemClicked(TreeViewItem<FileTreeViewItem> treeitem)
     {
+        var item = treeitem.Value;
         if (item.ItemType == FileTreeViewItem.NodeType.File)
         {
             logger.LogInformation($"Item pressed: {item.Path}");
@@ -130,62 +153,80 @@
 
     private async Task SetVideoSource(string src, bool setCaptions)
     {
-        videoSourceTitle = src?.Split('/').LastOrDefault() ?? "";
         videoSource = src;
         videoCaptions = new() { setCaptions? Path.ChangeExtension(src, ".vtt") : "" };
+        videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
         await videoRef.PausePlayback();
         await SendState();
 
         await videoRef.ReloadControl();
         await InvokeAsync(StateHasChanged);
     }
-
+    
     private long maxFileSize = 2L * 1024 * 1024 * 1024;
     private int maxAllowedFiles = 3;
     private bool isUploading;
     private string[] supportedFormats = {".mp4", ".webm", ".m4v"};
-    private async Task UploadFiles(InputFileChangeEventArgs e)
+
+    CancellationTokenSource ReadToken;
+    private async Task UploadFiles(UploadFile file)
     {
         isUploading = true;
 
-        foreach (var file in e.GetMultipleFiles(maxAllowedFiles))
-        {
             try
             {
                 var dir =  Path.Combine(Configuration.GetSection("VideoMapping")["VideoPath"], "uploads");
                 Directory.CreateDirectory(dir);
-                var path = Path.Combine(dir, file.Name);
+                var path = Path.Combine(dir, file.OriginFileName);
 
                 if(!supportedFormats.Any(fo => path.EndsWith(fo)))
                 {
-                    continue;
+                    await ToastService.Error("Upload", $"Only file formats {string.Join(' ', supportedFormats)} are supported!");
                 }
                 if(File.Exists(path))
                 {
-                    await JS.InvokeVoidAsync("alert", $"File called {file.Name} already exists!");
-                    continue;
+                    await ToastService.Error("Upload", $"File called {file.OriginFileName} already exists!");
                 }
 
-                await using FileStream fs = new(path, FileMode.Create);
-                await file.OpenReadStream(maxFileSize).CopyToAsync(fs);
+                ReadToken ??= new CancellationTokenSource();
+                var ret = await file.SaveToFileAsync(path, maxFileSize, ReadToken.Token);
+
+                if (ret)
+                {
+                    await ToastService.Success("Upload", "Upload completed");
+                }
+                else
+                {
+                    var errorMessage = $"Upload Failed!";
+                    file.Code = 1;
+                    file.Error = errorMessage;
+                    await ToastService.Error("Upload Error", errorMessage);
+                }
             }
             catch (Exception ex)
             {
-                logger.LogError("File: {Filename} Error: {Error}", file.Name, ex.Message);
+                logger.LogError("File: {Filename} Error: {Error}", file.OriginFileName, ex.Message);
+                await ToastService.Error("Upload Error", ex.Message);
             }
-        }
 
         isUploading = false;
         RefreshFileTree();
     }
 
+    List<string> userListItems = new();
+    
+    private void RefreshConnectedUsers(List<UserConnectioncount> connectedUsers)
+    {
+        userListItems = connectedUsers.Select(u => u.ToString()).ToList();
+    }
+
+    private List<TreeViewItem<FileTreeViewItem>> TreeViewItems { get; set; } = new();
     private void RefreshFileTree()
     {
         TreeViewItems = FileTreeViewItem.EnumerateFilesWithRootMapping(
                 Configuration.GetSection("VideoMapping")["VideoPath"] ?? "", 
                 Configuration.GetSection("VideoMapping")["MapTo"] ?? "",
                 supportedFormats);
-
     }
 
     protected override async Task OnInitializedAsync()
@@ -216,6 +257,8 @@
         });
 
         hubConnection.On<VideoStateDto>("ReceiveState", StateRecieved);
+
+        hubConnection.On<List<UserConnectioncount>>("ConnectedUsersChanged", RefreshConnectedUsers);
 
         await hubConnection.StartAsync();
 
@@ -276,9 +319,9 @@
         if(newstate.Source != videoSource)
         {
             logger.LogInformation($"Client: Setting video source.");
-            videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
             videoSource = newstate.Source;
             videoCaptions = newstate.Captions;
+            videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
 
             if(!string.IsNullOrEmpty(videoSource))
             {
@@ -345,8 +388,6 @@
         @* StateHasChanged(); *@
     }
 
-    private List<FileTreeViewItem> TreeViewItems = new();
-
     public async ValueTask DisposeAsync()
     {
         logger.LogInformation("Client: Disposing razor page.");
@@ -354,5 +395,8 @@
         {
             await hubConnection.DisposeAsync();
         }
+
+        ReadToken?.Cancel();
+        GC.SuppressFinalize(this);
     }
 }
