@@ -1,4 +1,4 @@
-@page "/"
+﻿@page "/"
 @attribute [Authorize]
 @implements IAsyncDisposable
 @inject NavigationManager Navigation
@@ -59,6 +59,7 @@
     </DockPanel>
 
     <div class="d-flex flex-column p-2 align-content-center">
+        <div>@videoSourceTitle</div>
         <BlazoredVideo @ref="videoRef"  id="playerx"
             width="1280" height="720" 
             controls playsinline
@@ -94,6 +95,10 @@
     private string? streamInputBoxContent;
     private HubConnection? hubConnection;
     string? videoSource = "";
+    string videoSourceTitle = "";
+
+    bool disableSendingState = false;
+
     List<string> videoCaptions = new() {""};
 
     private YoutubeClient youtube = new();
@@ -126,39 +131,20 @@
 
     private async Task SetVideoSource(string src, bool setCaptions)
     {
-            videoSource = src;
-            videoCaptions = new() { setCaptions? Path.ChangeExtension(src, ".vtt") : "" };
-            await videoRef.PausePlayback();
-            await SendState();
+        videoSourceTitle = src?.Split('/').LastOrDefault() ?? "";
+        videoSource = src;
+        videoCaptions = new() { setCaptions? Path.ChangeExtension(src, ".vtt") : "" };
+        await videoRef.PausePlayback();
+        await SendState();
 
-            await videoRef.ReloadControl();
-            await InvokeAsync(StateHasChanged);
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        IJSObjectReference Plyr;
-        IJSObjectReference Main;    
-
-        if (firstRender)
-        {
-            Plyr = await JS.InvokeAsync<IJSObjectReference>(
-                        "import", "./plyr.js");
-            Main = await JS.InvokeAsync<IJSObjectReference>(
-                        "import", "./plyr-loder.js");
-            await Main.InvokeVoidAsync("load", "playerx").AsTask();
-
-            if (hubConnection is not null)
-            {
-                await hubConnection.SendAsync("RequestState");
-            }
-        }
+        await videoRef.ReloadControl();
+        await InvokeAsync(StateHasChanged);
     }
 
     private long maxFileSize = 2L * 1024 * 1024 * 1024;
     private int maxAllowedFiles = 3;
     private bool isUploading;
-    private string[] supportedFormats = {".mp4", ".webm"};
+    private string[] supportedFormats = {".mp4", ".webm", ".m4v"};
     private async Task UploadFiles(InputFileChangeEventArgs e)
     {
         isUploading = true;
@@ -173,8 +159,7 @@
 
                 if(!supportedFormats.Any(fo => path.EndsWith(fo)))
                 {
-                    await JS.InvokeVoidAsync("alert", $"File format not supported!\n Supported file formats are: {string.Join(" ", supportedFormats)}");
-                    continue;
+                                        continue;
                 }
                 if(File.Exists(path))
                 {
@@ -195,6 +180,7 @@
         isUploading = false;
         RefreshFileTree();
     }
+
     private void RefreshFileTree()
     {
         TreeViewItems = FileTreeViewItem.EnumerateFilesWithRootMapping(
@@ -222,20 +208,65 @@
 
         hubConnection.On<int, DateTimeOffset>("Ping", async (n, timestamp) =>
         {
-            await hubConnection.SendAsync("Pong", n, timestamp);
+            @* await hubConnection.SendAsync("Pong", n, timestamp); *@
+            @* await JS.InvokeVoidAsync("Ping", n, timestamp); *@
+                await JSPing.InvokeVoidAsync("ping", dotnetRef, n, DateTimeOffset.UtcNow).AsTask(); 
         });
 
         hubConnection.On<VideoStateDto>("ReceiveState", StateRecieved);
 
         await hubConnection.StartAsync();
+    }
 
+    IJSObjectReference JSPing;
+    DotNetObjectReference<SyncVideo> dotnetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        @* IJSObjectReference Plyr;
+        IJSObjectReference Main;     *@
+
+        if (firstRender)
+        {
+            @* Plyr = await JS.InvokeAsync<IJSObjectReference>(
+                        "import", "./plyr.js");
+            Main = await JS.InvokeAsync<IJSObjectReference>(
+                        "import", "./plyr-loder.js");
+            await Main.InvokeVoidAsync("load", "playerx").AsTask(); *@
+
+            if (hubConnection is not null)
+            {
+                dotnetRef = DotNetObjectReference.Create(this); 
+                JSPing = await JS.InvokeAsync<IJSObjectReference>(
+                            "import", "./ping.js");
+                await JSPing.InvokeVoidAsync("ping", dotnetRef, 0, DateTimeOffset.UtcNow).AsTask(); 
+
+                await hubConnection.SendAsync("RequestState");
+            }
+            else 
+            {
+                logger.LogInformation($"Hub was disposed!");
+            }
+        }
+    }
+
+    [JSInvokable("Pong")]
+    public async Task Pong(int n, DateTimeOffset timestamp)
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("Pong", n, timestamp);
+        }
+        else 
+        {
+            logger.LogInformation($"Hub was disposed!");
+        }
     }
 
     private VideoStateDto GetStateDto()
     {
         return new VideoStateDto()
         {
-            LastUpdated = DateTimeOffset.UtcNow,
             IsPlaying = !videoState.Paused,
             Source = videoSource,
             Captions = videoCaptions,
@@ -247,6 +278,9 @@
     {
         if (videoRef is null)
             return;
+
+        disableSendingState = true;
+
         logger.LogInformation($"Client: State recieved. {newstate.Source?.Split('/').LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
 
         if(newstate.Source != videoSource)
@@ -261,30 +295,32 @@
                 await videoRef.ReloadControl();
             }
         }
+        if (newstate.IsPlaying)
+        {
+            logger.LogInformation($"Client: Pausing playback.");
+            await videoRef.StartPlayback();
+        }
+        else
+        {
+            logger.LogInformation($"Client: Pausing playback.");
+            await videoRef.PausePlayback();
+        }
         if(Math.Abs(newstate.VideoTimestamp - videoState.CurrentTime) > 0.5)
         {
             logger.LogInformation($"Client: Setting time.");
             await videoRef.SetCurrentTimeAsync(newstate.VideoTimestamp); 
         }
-        @* if (newstate.IsPlaying == videoState.Paused)
-        { *@
-            if (newstate.IsPlaying)
-            {
-                logger.LogInformation($"Client: Pausing playback.");
-                await videoRef.StartPlayback();
-            }
-            else
-            {
-                logger.LogInformation($"Client: Pausing playback.");
-                await videoRef.PausePlayback();
-            }
-        @* } *@
         lastUpdateRecieved = DateTimeOffset.Now;
         await InvokeAsync(StateHasChanged);
+
+        await Task.Delay(200);
+        disableSendingState = false;
     }
 
     private async Task SendState()
     {
+        if (disableSendingState)
+            return;
         if ((DateTimeOffset.Now - lastUpdateRecieved).TotalSeconds < 0.7)
             return;
 
@@ -300,7 +336,6 @@
     private async void OnEvent(VideoEventData videoData)
     {
         videoState = videoData.State;
-
         
         switch (videoData.EventName)
         {
@@ -308,7 +343,7 @@
             case VideoEvents.Playing:
             case VideoEvents.Pause:
             case VideoEvents.Seeking:
-            case VideoEvents.Seeked:
+            @* case VideoEvents.Seeked: *@
                 logger.LogInformation($"Client: OnEvent: {videoData.EventName} {videoState.CurrentTime}");
                 await SendState();
                 break;
