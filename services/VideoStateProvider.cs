@@ -25,11 +25,11 @@ public class VideoStateProvider
     // maps the conneted clients to their username
     public Dictionary<string, VideoHomeUser> ConnectedClients { get; private set; } = new();
 
-    public List<UserConnectioncount> ListConnectedUsers() =>
+    public List<UserConnectionCount> ListConnectedUsers() =>
                 ConnectedClients.Values
                 .Select(u => u.Username)
                 .GroupBy(u => u)
-                .Select(g => new UserConnectioncount { Username = g.Key, NumConnctions = g.Count() })
+                .Select(g => new UserConnectionCount { Username = g.Key, NumConnctions = g.Count() })
                 .ToList();
 
     public VideoHomeUser GetUser(string connectionId)

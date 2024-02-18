@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace VideoHome.Data
 {
-    public class UserConnectioncount
+    public class UserConnectionCount
     {
         public string Username { get; set; } = "";
         public int NumConnctions { get; set; }
@@ -11,7 +11,7 @@ namespace VideoHome.Data
         {
             var ret = Username;
             if (NumConnctions > 1)
-                ret += "*" + NumConnctions;
+                ret += " *" + NumConnctions;
 
             return ret;
         }
