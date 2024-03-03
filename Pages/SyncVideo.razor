@@ -90,7 +90,8 @@
         <MudPaper Width="320px">
             <MudList Clickable="false">
                 <MudListSubheader>
-                    Local Videos
+                    Local Videos <br>
+                    <button class="btn btn-primary" onclick="@NextVideo">Next</button>
                 </MudListSubheader>
                 <MudListItem>
                     <TreeView TItem="FileTreeViewItem" 
@@ -151,6 +152,45 @@
         }
     }
 
+    private async void NextVideo()
+    {
+        logger.LogInformation($"Next Video pressed");
+        var path = videoSource;
+        if(string.IsNullOrEmpty(path))
+            return;
+
+        foreach(var tree in TreeViewItems)
+        {
+            var nextVideoPath = FindNextVideo(path, tree);
+            if(!string.IsNullOrEmpty(nextVideoPath))
+            {
+                await SetVideoSource(nextVideoPath, true);
+                return;
+            }
+        }
+    }
+
+    private string? FindNextVideo(string path, TreeViewItem<FileTreeViewItem> tree)
+    {
+        for(int i = 0; i < tree.Items?.Count(); i++)
+        {
+            var item = tree.Items[i];
+            if(item.Value?.ItemType == FileTreeViewItem.NodeType.File && item.Value?.Path == path)
+            {
+                if(i+1 < tree.Items?.Count() && tree.Items[i+1].Value.ItemType == FileTreeViewItem.NodeType.File)
+                    return tree.Items[i+1].Value.Path;
+            }
+            else if (item.Value?.ItemType == FileTreeViewItem.NodeType.Folder)
+            {
+                var res = FindNextVideo(path, item);
+                if (!string.IsNullOrEmpty(res))
+                    return res;
+            }
+        }
+
+        return null;
+    }
+
     private async Task SetVideoSource(string src, bool setCaptions)
     {
         videoSource = src;
@@ -166,7 +206,7 @@
     private long maxFileSize = 2L * 1024 * 1024 * 1024;
     private int maxAllowedFiles = 3;
     private bool isUploading;
-    private string[] supportedFormats = {".mp4", ".webm", ".m4v"};
+    private string[] supportedFormats = {".mp4", ".webm", ".m4v", ".mkv"};
 
     CancellationTokenSource ReadToken;
     private async Task UploadFiles(UploadFile file)
@@ -215,7 +255,7 @@
 
     List<string> userListItems = new();
     
-    private void RefreshConnectedUsers(List<UserConnectioncount> connectedUsers)
+    private void RefreshConnectedUsers(List<UserConnectionCount> connectedUsers)
     {
         userListItems = connectedUsers.Select(u => u.ToString()).ToList();
     }
@@ -258,7 +298,7 @@
 
         hubConnection.On<VideoStateDto>("ReceiveState", StateRecieved);
 
-        hubConnection.On<List<UserConnectioncount>>("ConnectedUsersChanged", RefreshConnectedUsers);
+        hubConnection.On<List<UserConnectionCount>>("ConnectedUsersChanged", RefreshConnectedUsers);
 
         await hubConnection.StartAsync();
 
