@@ -27,11 +27,11 @@
             VideoEventOptions="options">
             <source src=@videoSource type="video/mp4" />
             <!-- Caption files -->
-            @if (videoCaptions != null && videoCaptions.Any())
+            @if (videoCaptions?.Any() == true)
             {
-                foreach (var cc in videoCaptions)
+                foreach (var (lang, path) in videoCaptions)
                 {
-                    <track kind="subtitles" label="English" srclang="en" src=@cc default />
+                    <track kind="subtitles" label=@lang srclang="en" src=@path default />
                 }
             }
         </BlazoredVideo>
@@ -120,7 +120,7 @@
 
     bool disableSendingState = false;
 
-    List<string> videoCaptions = new() {""};
+    List<(string, string)> videoCaptions = new();
 
     private YoutubeClient youtube = new();
     DotNetObjectReference<SyncVideo> dotnetRef;
@@ -191,10 +191,26 @@
         return null;
     }
 
+    private static readonly List<(string, string)> LangMap = [("English", ".vtt"), ("English", ".en.vtt"), ("Chinese", ".cn.vtt"), ("Chinese", ".zh-hans.vtt")];
+
+    private List<(string, string)> GetCaptions(string videoPath)
+    {
+        List<(string, string)> ret = new();
+        foreach (var (lang, ending) in LangMap)
+        {
+            var subpath = Path.ChangeExtension(videoPath, ending);
+            var realpath = subpath.Replace(Configuration.GetSection("VideoMapping")["MapTo"], Configuration.GetSection("VideoMapping")["VideoPath"]);
+            if (File.Exists(realpath))
+                ret.Add((lang, subpath));
+        }
+
+        return ret;
+    }
+    
     private async Task SetVideoSource(string src, bool setCaptions)
     {
         videoSource = src;
-        videoCaptions = new() { setCaptions? Path.ChangeExtension(src, ".vtt") : "" };
+        videoCaptions = GetCaptions(src);
         videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
         await videoRef.PausePlayback();
         await SendState();
@@ -342,7 +358,8 @@
         {
             IsPlaying = !videoState.Paused,
             Source = videoSource,
-            Captions = videoCaptions,
+            CaptionsLang = videoCaptions.Select(t => t.Item1).ToList(),
+            CaptionsPath = videoCaptions.Select(t => t.Item2).ToList(),
             VideoTimestamp = videoState.CurrentTime
         };
     }
@@ -360,7 +377,7 @@
         {
             logger.LogInformation($"Client: Setting video source.");
             videoSource = newstate.Source;
-            videoCaptions = newstate.Captions;
+            videoCaptions =  newstate.CaptionsLang.Zip(newstate.CaptionsPath).ToList();
             videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
 
             if(!string.IsNullOrEmpty(videoSource))
@@ -399,7 +416,8 @@
             return;
 
         VideoStateDto newstate = GetStateDto(); 
-        logger.LogInformation($"Client: Sending state. {newstate.Source?.Split('/')?.LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
+        logger.LogInformation($"Client: Sending state. {newstate.Source?.Split('/')?.LastOrDefault()} " +
+        $" {newstate.IsPlaying} {newstate.VideoTimestamp}");
 
         if (hubConnection is not null)
         {

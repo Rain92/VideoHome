@@ -9,7 +9,7 @@ namespace VideoHome.Server.Hubs
     public class SyncVideoHub : Hub
     {
         private readonly ILogger _logger;
-        private const int NUMPINGS = 5;
+        private const int Numpings = 5;
 
         private readonly VideoStateProvider _stateProvider;
         private readonly AuthenticationStateProvider _authenticationStateProvider;
@@ -52,14 +52,14 @@ namespace VideoHome.Server.Hubs
             {
                 await Clients.Caller.SendAsync("Ping", 1, DateTimeOffset.UtcNow);
             }
-            else if (n < NUMPINGS)
+            else if (n < Numpings)
             {
                 await Clients.Caller.SendAsync("Ping", n + 1, initialtime);
             }
             else
             {
                 var timediff = DateTimeOffset.UtcNow - initialtime;
-                var latency = (int)(timediff.TotalMilliseconds / (NUMPINGS * 2));
+                var latency = (int)(timediff.TotalMilliseconds / (Numpings * 2));
 
                 _stateProvider.UpdateUserLatency(Context.ConnectionId, latency);
                 _logger.LogInformation($"Client {_stateProvider.GetUser(Context.ConnectionId)} latency was measured at {latency}ms");
@@ -70,12 +70,12 @@ namespace VideoHome.Server.Hubs
         {
             if (_stateProvider.UpdateVideoState(newstate))
             {
-                _logger.LogInformation($"State recieved by {_stateProvider.GetUser(Context.ConnectionId)}. Updating other clients.");
+                _logger.LogInformation($"State received by {_stateProvider.GetUser(Context.ConnectionId)}. Updating other clients.");
                 await Clients.Others.SendAsync("ReceiveState", _stateProvider.CurrentVideoState);
             }
             else
             {
-                _logger.LogInformation($"Ignored state recieved by {_stateProvider.GetUser(Context.ConnectionId)}.");
+                _logger.LogInformation($"Ignored state received by {_stateProvider.GetUser(Context.ConnectionId)}.");
             }
         }
     }

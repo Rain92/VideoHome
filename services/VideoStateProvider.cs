@@ -4,7 +4,8 @@ public class VideoStateDto
 {
     public bool IsPlaying { get; set; }
     public string? Source { get; set; }
-    public List<string>? Captions { get; set; }
+    public List<string> CaptionsLang { get; set; } = new();
+    public List<string> CaptionsPath { get; set; } = new();
     public double VideoTimestamp { get; set; }
     public DateTimeOffset RecievedTime { get; set; }
     public string? Author { get; set; }
