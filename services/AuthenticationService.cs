@@ -1,8 +1,6 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
-using System.Linq;
 using System.Security.Claims;
-using System.Threading.Tasks;
 using VideoHome.Data;
 using System.Text.Json;
 
@@ -79,7 +77,7 @@ namespace VideoHome.Services
             {
                 new (ClaimTypes.Name, user.Username),
                 new (ClaimTypes.Hash, user.Password),
-            }, "BlazorSchool");
+            }, "UserPassword");
 
             var roles = _userService.GetUserRoles(user);
 
