@@ -23,15 +23,18 @@
 
     <div class="d-flex flex-column p-2 align-content-center">
         <div>@videoSourceTitle</div>
-        <BlazoredVideo @ref="videoRef" width="1280" height="720" controls playsinline EventFired="OnEvent"
-            VideoEventOptions="options">
+        <BlazoredVideo @ref="videoRef" width="1280" height="720" controls playsinline 
+                                                   webkit-playsinline="true" 
+                                                   muted
+                                                   EventFired="OnEvent"
+                                                   VideoEventOptions="options">
             <source src=@videoSource type="video/mp4" />
             <!-- Caption files -->
             @if (videoCaptions?.Any() == true)
             {
                 foreach (var (lang, path) in videoCaptions)
                 {
-                    <track kind="subtitles" label=@lang srclang="en" src=@path default />
+                    <track kind="subtitles" label=@lang srclang="en" src=@path default/>
                 }
             }
         </BlazoredVideo>
@@ -117,6 +120,7 @@
     private HubConnection? hubConnection;
     string? videoSource = "";
     string videoSourceTitle = "";
+    bool isMobile = false;
 
     bool disableSendingState = false;
 
@@ -222,7 +226,7 @@
     private long maxFileSize = 2L * 1024 * 1024 * 1024;
     private int maxAllowedFiles = 3;
     private bool isUploading;
-    private string[] supportedFormats = {".mp4", ".webm", ".m4v", ".mkv"};
+    private string[] supportedFormats = {".mp4",".m4v"};
 
     CancellationTokenSource ReadToken;
     private async Task UploadFiles(UploadFile file)
@@ -289,6 +293,9 @@
     {
         dotnetRef = DotNetObjectReference.Create(this);
 
+        var userAgent = await JS.InvokeAsync<string>("eval", "navigator.userAgent");
+        isMobile = userAgent.Contains("iPad") || userAgent.Contains("iPhone");
+        
         RefreshFileTree();
         var allOptionsEnabled = new VideoStateOptions() { All = true };
         foreach (var item in (VideoEvents[])(Enum.GetValues(typeof(VideoEvents))))
@@ -386,15 +393,23 @@
                 await videoRef.ReloadControl();
             }
         }
-        if (newstate.IsPlaying)
+        
+        try 
         {
-            logger.LogInformation($"Client: Pausing playback.");
-            await videoRef.StartPlayback();
+            if (newstate.IsPlaying)
+            {
+                logger.LogInformation($"Client: Pausing playback.");
+                await videoRef.StartPlayback();
+            }
+            else
+            {
+                logger.LogInformation($"Client: Pausing playback.");
+                await videoRef.PausePlayback();
+            }
         }
-        else
+        catch (Exception ex)
         {
-            logger.LogInformation($"Client: Pausing playback.");
-            await videoRef.PausePlayback();
+            logger.LogWarning("Autoplay failed: {Error}", ex.Message);
         }
         if(Math.Abs(newstate.VideoTimestamp - videoState.CurrentTime) > 0.5)
         {
