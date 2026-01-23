@@ -76,6 +76,7 @@ app.MapFallbackToPage("/_Host");
 
 var extensionProvider = new FileExtensionContentTypeProvider();
 extensionProvider.Mappings.Add(".vtt", "text/vtt");
+extensionProvider.Mappings.Add(".mkv", "video/x-matroska");
 
 app.UseStaticFiles(new StaticFileOptions()
 {
