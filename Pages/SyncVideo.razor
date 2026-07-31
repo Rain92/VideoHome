@@ -27,12 +27,11 @@
                            VideoEventOptions="options">
                 <source src="@videoSource" type="video/mp4"/>
                 <!-- Caption files -->
-                @if (videoCaptions?.Any() == true)
+                @for (var i = 0; i < videoCaptions.Count; i++)
                 {
-                    foreach (var (lang, path) in videoCaptions)
-                    {
-                        <track kind="subtitles" label=@lang srclang="en" src=@path default/>
-                    }
+                    var (lang, path) = videoCaptions[i];
+                    <track @key="path" kind="subtitles" label="@lang" srclang="@SrcLang(lang)" src="@path"
+                           default="@(i == 0)"/>
                 }
             </BlazoredVideo>
         </div>
@@ -41,7 +40,7 @@
     <DockPanel Class="px-4" Side="Side.Right">
 
         <MudPaper Width="320px">
-            <MudList T="string" Clickable="false">
+            <MudList T="string">
                 <MudListSubheader>
                     Connected Users
                 </MudListSubheader>
@@ -54,7 +53,7 @@
         <br>
 
         <MudPaper Width="320px">
-            <MudList T="string" Clickable="false">
+            <MudList T="string">
                 <MudListSubheader>
                     Watch Youtube stream
                 </MudListSubheader>
@@ -63,14 +62,14 @@
                         TValue="string"
                         PlaceHolder="Youtube URL"
                         @bind-Value="@streamInputBoxContent"/>
-                    <button class="btn btn-primary" onclick="@PlayYoutube">Play</button>
+                    <button class="btn btn-primary" @onclick="PlayYoutube">Play</button>
                 </MudListItem>
             </MudList>
         </MudPaper>
         <br>
 
         <MudPaper Width="320px">
-            <MudList T="string" Clickable="false">
+            <MudList T="string">
                 <MudListSubheader>
                     Upload Video
                 </MudListSubheader>
@@ -88,10 +87,10 @@
         <br>
 
         <MudPaper Width="320px">
-            <MudList T="string" Clickable="false">
+            <MudList T="string">
                 <MudListSubheader>
                     Local Videos <br>
-                    <button class="btn btn-primary" onclick="@NextVideo">Next</button>
+                    <button class="btn btn-primary" @onclick="NextVideo">Next</button>
                 </MudListSubheader>
                 <MudListItem>
                     <TreeView TItem="FileTreeViewItem"
@@ -107,26 +106,38 @@
 
 
 @code {
+    // Tail window after we finished driving the player ourselves, to catch the
+    // events that only arrive once the interop calls have returned.
+    private const double ECHO_WINDOW_SECONDS = 0.7;
+
     private readonly Dictionary<VideoEvents, VideoStateOptions> options = new();
     private VideoState videoState = new();
 
-    private DateTimeOffset lastUpdateRecieved = DateTimeOffset.MinValue;
+    // > 0 while we drive the player (remote update or source switch). Anything it
+    // raises in that window is our own doing, not the user's - never send it back.
+    private int suppressSendDepth;
+    private DateTimeOffset suppressSendUntil = DateTimeOffset.MinValue;
 
-    private BlazoredVideo videoRef;
+    // Completed by the LoadedMetadata video event. Reload/seek/play calls made right
+    // after ReloadControl() race the browser actually fetching the new source; a fixed
+    // Task.Delay either wastes time or (worse) is too short and the seek is silently
+    // dropped because the element isn't ready yet.
+    private readonly List<TaskCompletionSource<bool>> pendingVideoReadyWaiters = new();
+
+    private BlazoredVideo videoRef = null!;
     private string? streamInputBoxContent = "";
     private HubConnection? hubConnection;
+    private string username = "Invalid";
     string? videoSource = "";
     string videoSourceTitle = "";
     bool isMobile;
 
-    bool disableSendingState;
-
     List<(string, string)> videoCaptions = new();
 
     private readonly YoutubeClient youtube = new();
-    DotNetObjectReference<SyncVideo> dotnetRef;
+    DotNetObjectReference<SyncVideo>? dotnetRef;
 
-    private async void PlayYoutube()
+    private async Task PlayYoutube()
     {
         var url = streamInputBoxContent;
         if (url == null || !url.Contains("youtube.") || !url.Contains("watch?v="))
@@ -153,7 +164,7 @@
         }
     }
 
-    private async void NextVideo()
+    private async Task NextVideo()
     {
         logger.LogInformation("Next Video pressed");
         var path = videoSource;
@@ -194,6 +205,30 @@
 
     private static readonly List<(string, string)> LangMap = [("English", ".vtt"), ("English", ".en.vtt"), ("Vietnamese", ".vn.vtt"), ("Vietnamese", ".vi.vtt")];
 
+    private static string SrcLang(string lang) => lang switch
+    {
+        "Vietnamese" => "vi",
+        _ => "en"
+    };
+
+    // Waits for the video element to report LoadedMetadata, with a timeout fallback
+    // so a stalled/broken source can't hang the sync flow forever.
+    private async Task WaitForVideoReadyAsync()
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        pendingVideoReadyWaiters.Add(tcs);
+        try
+        {
+            var winner = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+            if (winner != tcs.Task)
+                logger.LogWarning("Client: Timed out waiting for video metadata to load.");
+        }
+        finally
+        {
+            pendingVideoReadyWaiters.Remove(tcs);
+        }
+    }
+
     private List<(string, string)> GetCaptions(string videoPath)
     {
         List<(string, string)> ret = new();
@@ -210,27 +245,55 @@
 
     private async Task SetVideoSource(string src, bool setCaptions)
     {
-        videoSource = src;
-        videoCaptions = GetCaptions(src);
-        videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
-        await videoRef.PausePlayback();
-        await SendState();
-
-        await videoRef.ReloadControl();
-        await InvokeAsync(StateHasChanged);
-        
-        // Unmute after reload if not initial load
-        if (!isInitialLoad) // && isMobile)
+        // Pausing and reloading below makes the player raise its own events while
+        // videoSource already points at the new file. Hold those back, otherwise we
+        // publish the new source together with the old video's position.
+        suppressSendDepth++;
+        try
         {
-            await Task.Delay(100); // Give it time to reload
-            await videoRef.SetMutedAsync(false);
+            videoSource = src;
+            videoCaptions = setCaptions ? GetCaptions(src) : new();
+            videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
+
+            // The cached state still describes the previous video. A fresh source
+            // always starts at zero, so reset before anyone can read it.
+            videoState = new VideoState { Paused = true, CurrentTime = 0 };
+
+            await videoRef.PausePlayback();
+
+            // SetSrcAsync talks to the browser element directly and is what actually
+            // starts the reload - it doesn't depend on Blazor's render batch having
+            // reached the browser first. Relying on StateHasChanged() + ReloadControl()
+            // (re-reading whatever the <source> tag's src happens to be at that moment)
+            // raced the render: StateHasChanged only schedules a render, it doesn't wait
+            // for the client to have applied it, so ReloadControl() could fire the
+            // reload before the browser ever saw the new src - reloading the OLD/empty
+            // source and leaving the element stuck at networkState=NO_SOURCE.
+            await videoRef.SetSrcAsync(videoSource ?? "");
+            await InvokeAsync(StateHasChanged);
+            await WaitForVideoReadyAsync();
+            await videoRef.SetCurrentTimeAsync(0);
+
+            // Unmute after reload if not initial load
+            if (!isInitialLoad) // && isMobile)
+            {
+                await videoRef.SetMutedAsync(false);
+            }
+
+            isInitialLoad = false;
+        }
+        finally
+        {
+            suppressSendDepth--;
+            suppressSendUntil = DateTimeOffset.UtcNow.AddSeconds(ECHO_WINDOW_SECONDS);
         }
 
-        isInitialLoad = false;
+        // Picking a video is an explicit action: it must reach the other side even
+        // though we just muted our own event stream.
+        await SendState(force: true);
     }
 
     private readonly long maxFileSize = 2L * 1024 * 1024 * 1024;
-    private int maxAllowedFiles = 3;
     private bool isUploading;
     private readonly string[] supportedFormats = { ".mp4", ".m4v", ".mkv" };
 
@@ -283,9 +346,13 @@
 
     List<string> userListItems = new();
 
-    private void RefreshConnectedUsers(List<UserConnectionCount> connectedUsers)
+    private async Task RefreshConnectedUsers(List<UserConnectionCount> connectedUsers)
     {
         userListItems = connectedUsers.Select(u => u.ToString()).ToList();
+
+        // Hub callbacks arrive off the renderer's dispatcher, so nothing repaints on
+        // its own - without this the list only catches up on the next unrelated render.
+        await InvokeAsync(StateHasChanged);
     }
 
     private List<TreeViewItem<FileTreeViewItem>> TreeViewItems { get; set; } = new();
@@ -315,41 +382,56 @@
             }
         }
 
-        hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/syncvideohub"), o => { o.UseDefaultCredentials = true; })
-            .Build();
+        var authstate = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        username = authstate.User?.Identity?.Name ?? "Invalid";
 
-        hubConnection.On<int, DateTimeOffset>("Ping", async (n, timestamp) =>
+        var connection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/syncvideohub"), o => { o.UseDefaultCredentials = true; })
+            .WithAutomaticReconnect()
+            .Build();
+        hubConnection = connection;
+
+        connection.On<int, DateTimeOffset>("Ping", async (n, timestamp) =>
         {
-            var dotnetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("ping", dotnetRef, n, timestamp).AsTask();
+            // Reuse the one reference we own - creating a new one per ping leaks it,
+            // nothing ever disposes them.
+            if (dotnetRef is not null)
+                await JS.InvokeVoidAsync("ping", dotnetRef, n, timestamp).AsTask();
         });
 
-        hubConnection.On<VideoStateDto>("ReceiveState", StateRecieved);
+        connection.On<VideoStateDto>("ReceiveState", StateRecieved);
 
-        hubConnection.On<List<UserConnectionCount>>("ConnectedUsersChanged", RefreshConnectedUsers);
+        connection.On<List<UserConnectionCount>>("ConnectedUsersChanged", RefreshConnectedUsers);
 
-        await hubConnection.StartAsync();
-
-        var authstate = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        var username = authstate.User?.Identity?.Name ?? "Invalid";
-        await hubConnection.SendAsync("RegisterUser", username);
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
+        // A reconnect gets a fresh ConnectionId, so as far as the server is concerned
+        // we are a stranger again: register once more or we vanish from the user list.
+        connection.Reconnected += async _ =>
         {
-            if (hubConnection is not null)
+            try
             {
-                await JS.InvokeVoidAsync("ping", dotnetRef, 0, DateTimeOffset.UtcNow).AsTask();
-                await hubConnection.SendAsync("RequestState");
+                await connection.SendAsync("RegisterUser", username);
+                await connection.SendAsync("RequestState");
             }
-            else
+            catch (Exception ex)
             {
-                logger.LogInformation("Hub was disposed!");
+                logger.LogWarning("Re-registering after reconnect failed: {Error}", ex.Message);
             }
-        }
+        };
+
+        await connection.StartAsync();
+        await connection.SendAsync("RegisterUser", username);
+
+        // This used to be sent from OnAfterRenderAsync(firstRender: true) - but Blazor
+        // paints the component's first frame immediately once OnInitializedAsync starts
+        // an async operation, it does not wait for this method to finish. That first
+        // render (and its OnAfterRenderAsync(firstRender: true) callback) reliably fired
+        // before execution reached this point, back when hubConnection was still null,
+        // so RequestState was skipped - and since firstRender is only ever true once,
+        // it was never retried. A freshly joined client would register with the hub but
+        // never actually ask it for the current video, staying blank until someone
+        // else's unrelated action happened to push a new state.
+        await JS.InvokeVoidAsync("ping", dotnetRef, 0, DateTimeOffset.UtcNow).AsTask();
+        await connection.SendAsync("RequestState");
     }
 
     [JSInvokable("Pong")]
@@ -384,69 +466,91 @@
         if (videoRef is null)
             return;
 
-        disableSendingState = true;
-
-        logger.LogInformation($"Client: State recieved. {newstate.Source?.Split('/').LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
-
-        if (newstate.Source != videoSource)
-        {
-            logger.LogInformation("Client: Setting video source.");
-            videoSource = newstate.Source;
-            videoCaptions = newstate.CaptionsLang.Zip(newstate.CaptionsPath).ToList();
-            videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
-
-            if (!string.IsNullOrEmpty(videoSource))
-            {
-                await InvokeAsync(StateHasChanged);
-                await videoRef.ReloadControl();
-
-                // Unmute after reload if not initial load
-                if (!isInitialLoad) // && isMobile)
-                {
-                    await Task.Delay(100); // Give it time to reload
-                    await videoRef.SetMutedAsync(false);
-                }
-
-                isInitialLoad = false;
-            }
-        }
-
+        suppressSendDepth++;
         try
         {
-            if (newstate.IsPlaying)
+            logger.LogInformation($"Client: State recieved. {newstate.Source?.Split('/').LastOrDefault()} {newstate.IsPlaying} {newstate.VideoTimestamp}");
+
+            if (newstate.Source != videoSource)
             {
-                logger.LogInformation("Client: Pausing playback.");
-                await videoRef.StartPlayback();
+                logger.LogInformation("Client: Setting video source.");
+                videoSource = newstate.Source;
+                videoCaptions = newstate.CaptionsLang.Zip(newstate.CaptionsPath).ToList();
+                videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
+
+                // Cached state belongs to the previous video - a new source is at zero.
+                videoState = new VideoState { Paused = true, CurrentTime = 0 };
+
+                if (!string.IsNullOrEmpty(videoSource))
+                {
+                    // SetSrcAsync talks to the browser element directly instead of
+                    // going through the <source> tag + StateHasChanged()/ReloadControl(),
+                    // which raced the render batch reaching the client (StateHasChanged
+                    // only schedules a render, it doesn't wait for delivery) and could
+                    // fire the reload against the still-old/empty source.
+                    await videoRef.SetSrcAsync(videoSource);
+                    await InvokeAsync(StateHasChanged);
+
+                    // This used to only be waited for when !isInitialLoad (it was tied
+                    // to the unmute step below), so the very first video a client ever
+                    // loaded - exactly the case when someone freshly joins a session -
+                    // went straight into seeking/playing with zero time for the browser
+                    // to fetch metadata. That race is why a newly joined client would
+                    // sometimes just not show the video until some later, unrelated
+                    // update happened to retrigger the seek.
+                    await WaitForVideoReadyAsync();
+
+                    // Unmute after reload if not initial load
+                    if (!isInitialLoad) // && isMobile)
+                    {
+                        await videoRef.SetMutedAsync(false);
+                    }
+
+                    isInitialLoad = false;
+                }
             }
-            else
+
+            // Seek before starting playback, not after: seeking post-play briefly
+            // shows/plays frame 0 of the new source before jumping to the synced spot.
+            if (Math.Abs(newstate.VideoTimestamp - videoState.CurrentTime) > 0.5)
             {
-                logger.LogInformation("Client: Pausing playback.");
-                await videoRef.PausePlayback();
+                logger.LogInformation("Client: Setting time to {Timestamp}.", newstate.VideoTimestamp);
+                await videoRef.SetCurrentTimeAsync(newstate.VideoTimestamp);
+                videoState.CurrentTime = newstate.VideoTimestamp;
             }
+
+            try
+            {
+                if (newstate.IsPlaying)
+                {
+                    logger.LogInformation("Client: Starting playback.");
+                    await videoRef.StartPlayback();
+                }
+                else
+                {
+                    logger.LogInformation("Client: Pausing playback.");
+                    await videoRef.PausePlayback();
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Autoplay failed: {Error}", ex.Message);
+            }
+
+            await InvokeAsync(StateHasChanged);
         }
-        catch (Exception ex)
+        finally
         {
-            logger.LogWarning("Autoplay failed: {Error}", ex.Message);
+            // In a finally so a failed interop call cannot leave this client mute
+            // for the rest of the session.
+            suppressSendDepth--;
+            suppressSendUntil = DateTimeOffset.UtcNow.AddSeconds(ECHO_WINDOW_SECONDS);
         }
-
-        if (Math.Abs(newstate.VideoTimestamp - videoState.CurrentTime) > 0.5)
-        {
-            logger.LogInformation("Client: Setting time.");
-            await videoRef.SetCurrentTimeAsync(newstate.VideoTimestamp);
-        }
-
-        lastUpdateRecieved = DateTimeOffset.Now;
-        await InvokeAsync(StateHasChanged);
-
-        await Task.Delay(200);
-        disableSendingState = false;
     }
 
-    private async Task SendState()
+    private async Task SendState(bool force = false)
     {
-        if (disableSendingState)
-            return;
-        if ((DateTimeOffset.Now - lastUpdateRecieved).TotalSeconds < 0.7)
+        if (!force && (suppressSendDepth > 0 || DateTimeOffset.UtcNow < suppressSendUntil))
             return;
 
         var newstate = GetStateDto();
@@ -459,9 +563,22 @@
         }
     }
 
-    private async void OnEvent(VideoEventData videoData)
+    // EventFired is an Action, so the component cannot await us. Start the async part
+    // separately rather than making this async void, where a failed send would go
+    // unobserved and tear down the circuit.
+    private void OnEvent(VideoEventData videoData) => _ = HandleVideoEvent(videoData);
+
+    private async Task HandleVideoEvent(VideoEventData videoData)
     {
         videoState = videoData.State;
+
+        if (videoData.EventName == VideoEvents.LoadedMetadata)
+        {
+            // There is only one <video> element, so any LoadedMetadata means whatever
+            // reload is in flight is now ready - release everyone waiting on it.
+            foreach (var waiter in pendingVideoReadyWaiters.ToArray())
+                waiter.TrySetResult(true);
+        }
 
         switch (videoData.EventName)
         {
@@ -471,7 +588,14 @@
             case VideoEvents.Seeking:
                 @* case VideoEvents.Seeked: *@
                 logger.LogInformation($"Client: OnEvent: {videoData.EventName} {videoState.CurrentTime}");
-                await SendState();
+                try
+                {
+                    await SendState();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning("Sending state failed: {Error}", ex.Message);
+                }
                 break;
         }
         @* StateHasChanged(); *@
@@ -494,7 +618,14 @@
         }
 
         dotnetRef?.Dispose();
-        uploadCancellationToken?.Cancel();
+        dotnetRef = null;
+
+        if (uploadCancellationToken is not null)
+        {
+            await uploadCancellationToken.CancelAsync();
+            uploadCancellationToken.Dispose();
+        }
+
         GC.SuppressFinalize(this);
     }
 }

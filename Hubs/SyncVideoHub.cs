@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using VideoHome.Services;
 
@@ -12,12 +11,10 @@ namespace VideoHome.Server.Hubs
         private const int Numpings = 5;
 
         private readonly VideoStateProvider _stateProvider;
-        private readonly AuthenticationStateProvider _authenticationStateProvider;
-        public SyncVideoHub(VideoStateProvider stateProvider, ILogger<WebsiteAuthenticator> logger, AuthenticationStateProvider authenticationStateProvider)
+        public SyncVideoHub(VideoStateProvider stateProvider, ILogger<SyncVideoHub> logger)
         {
             _logger = logger;
             _stateProvider = stateProvider;
-            _authenticationStateProvider = authenticationStateProvider;
         }
 
         public async Task RequestState()
@@ -33,9 +30,13 @@ namespace VideoHome.Server.Hubs
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            _logger.LogInformation($"User disconnected:  {_stateProvider.GetUser(Context.ConnectionId)}. Number of users is {_stateProvider.NumConnectedClients}");
+            var user = _stateProvider.GetUser(Context.ConnectionId);
             _stateProvider.RemoveUser(Context.ConnectionId);
-            await Clients.Caller.SendAsync("ConnectedUsersChanged", _stateProvider.ListConnectedUsers());
+
+            _logger.LogInformation($"User disconnected:  {user}. Number of users is {_stateProvider.NumConnectedClients}");
+
+            // Everyone still here needs the new list - the caller is the one leaving.
+            await Clients.All.SendAsync("ConnectedUsersChanged", _stateProvider.ListConnectedUsers());
             await base.OnDisconnectedAsync(exception);
         }
 
@@ -43,7 +44,9 @@ namespace VideoHome.Server.Hubs
         {
             _stateProvider.AddUser(Context.ConnectionId, username);
             _logger.LogInformation($"User registered: {Context.ConnectionId} {_stateProvider.GetUser(Context.ConnectionId)}. Number of users is {_stateProvider.NumConnectedClients}");
-            await Clients.Caller.SendAsync("ConnectedUsersChanged", _stateProvider.ListConnectedUsers());
+
+            // Not just the caller: the clients already watching have to see the newcomer.
+            await Clients.All.SendAsync("ConnectedUsersChanged", _stateProvider.ListConnectedUsers());
         }
 
         public async Task Pong(int n, DateTimeOffset initialtime)
@@ -68,6 +71,9 @@ namespace VideoHome.Server.Hubs
 
         public async Task UpdateState(VideoStateDto newstate)
         {
+            // Stamped here, not client side, so the echo detection can rely on it.
+            newstate.Author = Context.ConnectionId;
+
             if (_stateProvider.UpdateVideoState(newstate))
             {
                 _logger.LogInformation($"State received by {_stateProvider.GetUser(Context.ConnectionId)}. Updating other clients.");
