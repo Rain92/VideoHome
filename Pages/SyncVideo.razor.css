@@ -1,37 +1,415 @@
-.avatar-picture-inputfile-container {
-    white-space: nowrap;
+/* ---------- Layout ---------- */
+.watch-layout {
+    --side-w: 360px;
+    /* Everything above/below the video inside the player column: page padding,
+       the title row and the gap under it. Used to cap the video by viewport
+       height so the whole page fits without scrolling. */
+    --player-chrome: calc(var(--header-h) + 7rem);
+
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--side-w);
+    /* Generous column gap: the backlight spills past the frame, and it needs
+       somewhere to land before it reaches the rail. */
+    gap: var(--pad-4);
+    column-gap: 2.5rem;
+    padding: var(--pad-4);
     width: 100%;
-    display: flex;
-    justify-content: flex-end;
-    align-items: baseline;
+    max-width: 1840px;
+    margin-inline: auto;
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+    /* --side-w is registered as a <length> in site.css so it can be animated;
+       the grid track above follows it frame by frame. */
+    transition: --side-w 320ms var(--ease),
+                column-gap 320ms var(--ease);
 }
 
-.selected-file-name {
-    flex-grow: 1;
+/* Theatre mode: collapse the rail's track rather than removing it, so the video
+   widens into the space instead of snapping. */
+.watch-layout.is-theater {
+    --side-w: 0px;
+    column-gap: 0;
+}
+
+/* Faded rather than display:none - the rail has to still be in the grid for its
+   track to have anything to collapse. It reaches zero opacity well before the
+   track closes, so the panels are never seen being squashed. */
+.watch-layout.is-theater .watch-side {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    overflow: hidden;
+    transition: opacity 200ms var(--ease), visibility 0s 200ms;
+}
+
+/* ---------- Player ---------- */
+.watch-player {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pad-3);
+    min-width: 0;
+    min-height: 0;
+}
+
+.watch-player-header {
+    display: flex;
+    align-items: center;
+    gap: var(--pad-2);
+    min-height: 34px;
+}
+
+.watch-title {
+    margin: 0;
+    min-width: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink-1);
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-right: 10px;
-    border-bottom: solid 1px var(--mud-palette-lines-inputs);
-    padding: 6px 0 6px 0;
+    white-space: nowrap;
+}
+.watch-title.is-idle {
+    color: var(--ink-3);
+    font-weight: 500;
 }
 
-.error .caption {
-    color: var(--mud-palette-error);
+.source-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex: none;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--line-1);
+    border-radius: 999px;
+    background: var(--bg-2);
+    color: var(--ink-3);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.source-badge i { font-size: 0.8rem; }
+.source-badge.is-youtube {
+    color: #ff6b6b;
+    border-color: #ff6b6b40;
+    background: #ff6b6b14;
+}
+.source-badge.is-local {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    background: var(--accent-soft);
 }
 
-.error .selected-file-name {
-    border-bottom-color: var(--mud-palette-error);
+.watch-actions {
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: 0.5rem;
+    margin-left: auto;
 }
 
-.error .mud-input-helper-text {
-    color: var(--mud-palette-error);
+/* The stage soaks up the leftover column height so the frame can centre in it,
+   both axes, whatever the sidebar's height happens to be. */
+.video-stage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.youtube-input {
-  padding: 5px;
-  margin: 5px;
+/* Sized box the frame and its backlight share. */
+.video-shell {
+    position: relative;
+    width: 100%;
+    /* Never taller than the viewport: cap the width at whatever 16:9 allows for
+       the height that's actually left. Keeps the video centred instead of
+       overflowing off the bottom of the page. */
+    max-width: calc((100dvh - var(--player-chrome)) * 16 / 9);
 }
 
-.mudpaper {
-    Width: 150px;
+/* A 32x18 canvas stretched to full size and blurred hard - the upscale does most
+   of the smoothing, so the blur radius can stay cheap. */
+.video-ambient {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    transform: scale(1.06);
+    filter: blur(56px) saturate(160%);
+    opacity: 0;
+    transition: opacity 900ms ease;
+    pointer-events: none;
+}
+.video-shell.is-lit .video-ambient {
+    opacity: 0.5;
+}
+
+.video-frame {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: radial-gradient(120% 130% at 50% 0%, #10141d 0%, #000 68%);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-stage);
+    transition: box-shadow 900ms ease;
+}
+
+/* Once the backlight is carrying the glow, drop the static amber one so the
+   video's own colours are the only thing tinting the page. */
+.video-shell.is-lit .video-frame {
+    box-shadow: 0 0 0 1px var(--line-1),
+                0 28px 64px -28px rgb(0 0 0 / 0.95);
+}
+
+/* ::deep is required: the <video> is rendered by BlazoredVideo, so it never
+   carries this component's scope attribute and a plain descendant selector
+   compiles to something that can't match it. */
+.video-frame ::deep video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: transparent;
+}
+
+.video-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    padding: var(--pad-4);
+    text-align: center;
+    pointer-events: none;
+}
+.video-placeholder i {
+    margin-bottom: 0.5rem;
+    font-size: 2.5rem;
+    color: var(--accent);
+    opacity: 0.5;
+}
+.video-placeholder-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+.video-placeholder-hint {
+    margin: 0;
+    max-width: 36ch;
+    font-size: 0.875rem;
+    color: var(--ink-3);
+}
+
+/* ---------- Side rail ---------- */
+.watch-side {
+    align-self: start;
+    position: sticky;
+    top: calc(var(--header-h) + var(--pad-4));
+    display: flex;
+    flex-direction: column;
+    gap: var(--pad-4);
+    min-width: 0;
+    max-height: calc(100dvh - var(--header-h) - var(--pad-4) * 2);
+    /* Safety valve for short screens: the panels shrink as far as they can and
+       the rail scrolls only if they still don't fit. */
+    overflow-y: auto;
+    overflow-x: hidden;
+    transition: opacity 200ms var(--ease);
+}
+
+.side-panel {
+    padding: 1.25rem;
+    transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+.side-panel:hover {
+    border-color: var(--line-2);
+}
+
+.side-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 var(--pad-3);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+}
+.side-panel-title i {
+    font-size: 0.8125rem;
+    color: var(--accent);
+}
+
+.side-panel-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--pad-2);
+    margin-bottom: var(--pad-3);
+}
+.side-panel-title-row .side-panel-title {
+    margin-bottom: 0;
+}
+
+/* ---------- Connected users ---------- */
+.user-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0;
+}
+
+.user-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem;
+    border-radius: var(--radius-sm);
+    transition: background 120ms var(--ease);
+}
+.user-row:hover {
+    background: var(--bg-3);
+}
+
+/* --avatar-hue comes from the markup, derived from the username. */
+.user-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: linear-gradient(145deg,
+                hsl(var(--avatar-hue, 38) 62% 64%) 0%,
+                hsl(calc(var(--avatar-hue, 38) - 24) 58% 48%) 100%);
+    box-shadow: inset 0 1px 0 #ffffff33;
+    color: #14100acc;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.user-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9rem;
+    color: var(--ink-1);
+}
+
+.user-devices {
+    margin-left: auto;
+    flex: none;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    background: var(--bg-3);
+    color: var(--ink-3);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- YouTube ---------- */
+/* Grid rather than flex: BootstrapInput renders its own markup, so sizing the
+   first child by selector would need ::deep guesswork about its shape. */
+.youtube-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--pad-2);
+    align-items: center;
+}
+.youtube-row ::deep input {
+    width: 100%;
+}
+.youtube-row .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+/* ---------- Upload ---------- */
+.upload-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: var(--pad-2);
+    color: var(--ink-2);
+    font-size: 0.875rem;
+}
+.upload-status i {
+    color: var(--accent);
+}
+
+/* ---------- File tree ---------- */
+.tree-panel {
+    display: flex;
+    flex-direction: column;
+    /* Low enough that a 768px-tall laptop still fits the whole rail once the
+       other three panels have taken their share. */
+    min-height: 120px;
+    overflow: hidden;
+}
+.tree-panel .btn-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+/* Bleed the scroll area into the panel padding so the scrollbar hugs the edge
+   while the heading above it stays put. */
+.tree-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -1.25rem -1.25rem;
+    padding: 0 1.25rem 1.25rem;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1023.98px) {
+    .watch-layout {
+        grid-template-columns: 1fr;
+        gap: var(--pad-3);
+        column-gap: var(--pad-3);
+        padding: var(--pad-3);
+    }
+
+    .watch-side {
+        order: 2;
+        position: static;
+        max-height: none;
+        overflow: visible;
+        gap: var(--pad-3);
+    }
+
+    /* The page scrolls here, so the height cap only gets in the way. */
+    .video-shell { max-width: 100%; }
+    .video-ambient { filter: blur(36px) saturate(160%); }
+
+    .tree-panel { min-height: 0; }
+    .tree-scroll { max-height: 45vh; }
+}
+
+@media (max-width: 640.98px) {
+    .watch-layout { padding: var(--pad-2); }
+    .side-panel   { padding: var(--pad-3); }
+    .watch-title  { font-size: 1rem; }
+    .video-frame  { border-radius: var(--radius-md); }
+    .tree-scroll {
+        margin: 0 calc(var(--pad-3) * -1) calc(var(--pad-3) * -1);
+        padding: 0 var(--pad-3) var(--pad-3);
+    }
 }

@@ -65,14 +65,22 @@ services.AddBootstrapBlazor(options =>
     {
         options.ToastDelay = 4000;
     });
-services.AddSingleton<CounterService>();
 services.AddSingleton<VideoStateProvider>();
 services.AddSingleton<YoutubeStreamService>();
+services.AddSingleton<WatchHistoryService>();
 services.AddHostedService<VideoStatePersistenceService>();
 
 #endregion
 
 var app = builder.Build();
+
+// Resolved eagerly so the history file is read - and any problem with it logged - at
+// startup, rather than by whoever happens to open the page first.
+var watchHistory = app.Services.GetRequiredService<WatchHistoryService>();
+
+// A stop while a film is running would otherwise lose that stretch of watching: the
+// clients never get the chance to report the pause that would have recorded it.
+app.Lifetime.ApplicationStopping.Register(() => watchHistory.FlushOpenSpan("server shutting down"));
 
 #region snippet_Configure
 app.UseResponseCompression();
@@ -128,7 +136,6 @@ app.UseWhen(
     });
 
 app.MapBlazorHub();
-app.MapHub<CounterHub>("/counterhub");
 app.MapHub<SyncVideoHub>("/syncvideohub");
 
 // Both browsers play a YouTube video through here rather than being handed the signed

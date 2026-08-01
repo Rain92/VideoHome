@@ -1,4 +1,4 @@
-﻿@page
+@page
 @model VideoHome.Pages.ErrorModel
 
 <!DOCTYPE html>
@@ -7,16 +7,16 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Error</title>
-    <link href="~/css/bootstrap/bootstrap.min.css" rel="stylesheet" />
+    <title>Error · VideoHome</title>
     <link href="~/css/site.css" rel="stylesheet" asp-append-version="true" />
+    <link rel="icon" type="image/png" href="~/favicon.png" />
 </head>
 
 <body>
-    <div class="main">
-        <div class="content px-4">
-            <h1 class="text-danger">Error.</h1>
-            <h2 class="text-danger">An error occurred while processing your request.</h2>
+    <div class="auth-shell">
+        <div class="auth-card wide">
+            <h1 class="text-danger">Something went wrong.</h1>
+            <p class="text-danger">An error occurred while processing your request.</p>
 
             @if (Model.ShowRequestId)
             {
@@ -25,7 +25,7 @@
                 </p>
             }
 
-            <h3>Development Mode</h3>
+            <h2>Development Mode</h2>
             <p>
                 Swapping to the <strong>Development</strong> environment displays detailed information about the error that occurred.
             </p>

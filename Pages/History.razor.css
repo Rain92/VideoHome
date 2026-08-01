@@ -1,0 +1,270 @@
+.history-layout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pad-4);
+    width: 100%;
+    max-width: 1100px;
+    margin-inline: auto;
+    padding: var(--pad-4);
+}
+
+/* ---------- Head ---------- */
+.history-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.history-title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    color: var(--ink-1);
+}
+
+.history-lede {
+    margin: 0;
+    max-width: 76ch;
+    font-size: 0.9375rem;
+    color: var(--ink-3);
+    text-wrap: pretty;
+}
+
+/* ---------- Figures ---------- */
+.history-figures {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr 1fr;
+    gap: var(--pad-3);
+}
+
+.figure {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: var(--pad-4);
+}
+
+.figure-label {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+}
+
+/* Proportional figures, not tabular: at display sizes equal-width digits make a
+   number like 1:21 read loose. tabular-nums is for the aligned columns below. */
+.figure-hero-value {
+    margin: 0;
+    font-size: 3rem;
+    line-height: 1.1;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    color: var(--accent);
+}
+
+.figure-value {
+    margin: 0;
+    font-size: 1.75rem;
+    line-height: 1.2;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    color: var(--ink-1);
+}
+
+.figure-hero {
+    background:
+        radial-gradient(120% 160% at 0% 0%, var(--accent-glow), transparent 60%),
+        linear-gradient(180deg, #ffffff09, transparent 45%),
+        var(--bg-2);
+}
+
+/* ---------- Day cards ---------- */
+.history-day {
+    padding: var(--pad-4);
+}
+
+.history-day-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--pad-3);
+    padding-bottom: var(--pad-3);
+    /* Solid hairline, one shade off the surface - a dashed rule would read as a
+       threshold rather than a divider. */
+    border-bottom: 1px solid var(--line-1);
+}
+
+.history-day-title {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink-1);
+}
+
+.history-day-meta {
+    flex: none;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.history-dot {
+    padding: 0 0.3rem;
+    color: var(--line-2);
+}
+
+/* ---------- Rows ---------- */
+.history-rows {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--pad-4);
+    margin: 0;
+    padding: var(--pad-4) 0 0;
+}
+
+.history-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 0;
+    padding: 0.5rem 0.6rem;
+    margin: -0.5rem -0.6rem;
+    border-radius: var(--radius-md);
+    transition: background 140ms var(--ease);
+}
+.history-row:hover {
+    background: #ffffff06;
+}
+
+.history-row-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+/* Shape carries the source type as well as colour, so the distinction survives for
+   anyone who cannot separate the two hues. */
+.history-row-icon {
+    flex: none;
+    width: 1rem;
+    font-size: 0.875rem;
+    text-align: center;
+}
+.history-row-icon.is-local   { color: var(--accent); }
+.history-row-icon.is-youtube { color: #ff6b6b; }
+
+.history-row-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--ink-1);
+}
+
+.history-row-span {
+    flex: none;
+    margin-left: auto;
+    font-size: 0.8125rem;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- The bar ---------- */
+/* Padding rather than a taller bar: the hit area clears the ~24px minimum while the
+   mark itself stays thin. */
+.history-bar {
+    padding: 0.5rem 0;
+    margin-left: 1.6rem;
+    cursor: default;
+}
+
+.history-track {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--bg-3);
+    overflow: hidden;
+}
+
+.history-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 4px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent-lo), var(--accent-hi));
+    transition: filter 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+
+.history-bar:hover .history-fill {
+    filter: brightness(1.12);
+    box-shadow: 0 0 16px -2px var(--accent);
+}
+
+.history-row-meta {
+    margin: 0 0 0 1.6rem;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.history-row-share {
+    color: var(--ink-2);
+}
+
+/* ---------- Empty ---------- */
+.history-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    padding: var(--pad-5) var(--pad-4);
+    text-align: center;
+}
+.history-empty i {
+    margin-bottom: 0.5rem;
+    font-size: 2.25rem;
+    color: var(--accent);
+    opacity: 0.5;
+}
+.history-empty-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+.history-empty-hint {
+    margin: 0;
+    max-width: 44ch;
+    font-size: 0.875rem;
+    color: var(--ink-3);
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 767.98px) {
+    .history-layout { padding: var(--pad-3); gap: var(--pad-3); }
+
+    .history-figures { grid-template-columns: 1fr 1fr; }
+    .figure-hero     { grid-column: 1 / -1; }
+
+    .figure { padding: var(--pad-3); }
+    .figure-hero-value { font-size: 2.5rem; }
+
+    .history-day  { padding: var(--pad-3); }
+    .history-rows { gap: var(--pad-3); }
+
+    /* The indent buys little on a narrow screen and costs bar length. */
+    .history-bar,
+    .history-row-meta { margin-left: 0; }
+
+    /* margin-left:auto is kept so the times stay right-aligned into a column. */
+    .history-row-head { flex-wrap: wrap; }
+}

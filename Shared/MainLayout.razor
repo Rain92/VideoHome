@@ -1,17 +1,38 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
-<PageTitle>Video Home</PageTitle>
+<PageTitle>VideoHome</PageTitle>
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+<div class="app-shell">
+    <NavMenu />
 
-    <main>
-        <article class="content px-4">
-            @Body
-        </article>
+    <main class="app-main">
+        @Body
     </main>
 </div>
 
-<MudThemeProvider />
+<MudThemeProvider Theme="@DarkCinema" IsDarkMode="true" />
+
+@code {
+    private static readonly MudTheme DarkCinema = new()
+    {
+        PaletteDark = new PaletteDark
+        {
+            Background       = "#0b0e14",
+            Surface          = "#161b26",
+            AppbarBackground = "#11141c",
+            DrawerBackground = "#11141c",
+            TextPrimary      = "#e6eaf2",
+            TextSecondary    = "#b6bdca",
+            Primary          = "#f5b942",
+            Secondary        = "#b6bdca",
+            Error            = "#e5534b",
+            Success          = "#4cc38a",
+            Dark             = "#0b0e14",
+            Divider          = "#232a3a",
+            LinesInputs      = "#232a3a",
+            TableLines       = "#232a3a",
+            ActionDefault    = "#b6bdca",
+            ActionDisabled   = "#7d8698",
+        },
+    };
+}

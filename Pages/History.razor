@@ -1,0 +1,204 @@
+@page "/history"
+@attribute [Authorize]
+@using System.Globalization
+@using VideoHome.Services
+@* Not named "History": a member cannot share the name of its enclosing component. *@
+@inject WatchHistoryService WatchHistory
+
+<PageTitle>VideoHome · History</PageTitle>
+
+<div class="history-layout">
+
+    <header class="history-head">
+        <h1 class="history-title">Watch history</h1>
+        <p class="history-lede">
+            One row per film per day, showing how much of it you got through.
+            A day's viewing is written down whenever playback stops.
+        </p>
+    </header>
+
+    @if (entries.Count == 0)
+    {
+        <section class="card-panel history-empty">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+            <p class="history-empty-title">Nothing watched yet</p>
+            <p class="history-empty-hint">
+                Start something on the <a href="">watch page</a> and pause it — that's the point
+                where a day's viewing gets recorded.
+            </p>
+        </section>
+    }
+    else
+    {
+        @* Figures, not a chart: three numbers have no shape worth plotting. One hero,
+           two supporting tiles. *@
+        <section class="history-figures">
+            <div class="card-panel figure figure-hero">
+                <p class="figure-label">Film time covered</p>
+                <p class="figure-hero-value">@Clock(totalCovered)</p>
+            </div>
+            <div class="card-panel figure">
+                <p class="figure-label">Films</p>
+                <p class="figure-value">@distinctTitles</p>
+            </div>
+            <div class="card-panel figure">
+                <p class="figure-label">Days</p>
+                <p class="figure-value">@days.Count</p>
+            </div>
+        </section>
+
+        @foreach (var day in days)
+        {
+            <section class="card-panel history-day">
+                <header class="history-day-head">
+                    <h2 class="history-day-title">@DayLabel(day.Day)</h2>
+                    <span class="history-day-meta">
+                        @day.Entries.Count @(day.Entries.Count == 1 ? "film" : "films")
+                        <span class="history-dot" aria-hidden="true">·</span>
+                        @Clock(day.Total)
+                    </span>
+                </header>
+
+                <ul class="history-rows">
+                    @foreach (var entry in day.Entries)
+                    {
+                        var scale = ScaleFor(entry, day);
+                        <li class="history-row" @key="entry.Title">
+                            <div class="history-row-head">
+                                <i class="history-row-icon @(IsYoutube(entry) ? "fa-brands fa-youtube is-youtube" : "fa-solid fa-film is-local")"
+                                   aria-hidden="true"></i>
+                                <span class="history-row-title" title="@entry.Title">@entry.Title</span>
+                                <span class="history-row-span">@Clock(entry.FromSeconds) – @Clock(entry.ToSeconds)</span>
+                            </div>
+
+                            @* Padded wrapper, so the hover target is comfortably bigger
+                               than the 10px bar it contains. *@
+                            <div class="history-bar" title="@Tooltip(entry)">
+                                <div class="history-track">
+                                    <div class="history-fill"
+                                         style="left: @Pct(entry.FromSeconds / scale * 100); width: @Pct(BarWidth(entry, scale));">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p class="history-row-meta">
+                                @Clock(entry.WatchedSeconds) covered
+                                @if (entry.DurationSeconds > 0)
+                                {
+                                    <span class="history-dot" aria-hidden="true">·</span>
+                                    <span>of @Clock(entry.DurationSeconds)</span>
+                                    <span class="history-dot" aria-hidden="true">·</span>
+                                    <span class="history-row-share">@Share(entry)</span>
+                                }
+                                else
+                                {
+                                    <span class="history-dot" aria-hidden="true">·</span>
+                                    <span>total length unknown</span>
+                                }
+                            </p>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    // A day's worth of rows, plus the totals the header and the bar scale need.
+    private sealed record DayGroup(DateOnly Day, List<WatchHistoryEntry> Entries)
+    {
+        public double Total => Entries.Sum(e => e.WatchedSeconds);
+
+        // Fallback scale for rows whose film length was never reported: the furthest
+        // point anyone reached that day, so the bars stay comparable to each other.
+        public double FurthestPoint => Entries.Select(e => e.ToSeconds).DefaultIfEmpty(0).Max();
+    }
+
+    private List<WatchHistoryEntry> entries = new();
+    private List<DayGroup> days = new();
+    private double totalCovered;
+    private int distinctTitles;
+
+    protected override void OnInitialized()
+    {
+        // A snapshot on load rather than a live subscription: history only changes when
+        // playback stops, and this page is not where anyone is watching.
+        entries = WatchHistory.Snapshot();
+
+        days = entries
+            .GroupBy(e => e.Day)
+            .OrderByDescending(g => g.Key)
+            .Select(g => new DayGroup(g.Key, g.ToList()))
+            .ToList();
+
+        totalCovered = entries.Sum(e => e.WatchedSeconds);
+        distinctTitles = entries.Select(e => e.Title).Distinct(StringComparer.Ordinal).Count();
+    }
+
+    private static bool IsYoutube(WatchHistoryEntry entry) =>
+        entry.Source?.StartsWith("/youtube/", StringComparison.Ordinal) == true;
+
+    // The film's own length where we know it, so the bar reads as a portion of the
+    // whole; otherwise the day's furthest point.
+    private static double ScaleFor(WatchHistoryEntry entry, DayGroup day)
+    {
+        var scale = entry.DurationSeconds > 0 ? entry.DurationSeconds : day.FurthestPoint;
+        return scale > 0 ? scale : 1;
+    }
+
+    // Floored so a very short span is still a visible mark rather than a hairline, and
+    // clamped so rounding can never push the fill past the end of its track.
+    private static double BarWidth(WatchHistoryEntry entry, double scale)
+    {
+        var start = entry.FromSeconds / scale * 100;
+        var width = entry.WatchedSeconds / scale * 100;
+        return Math.Clamp(Math.Max(width, 1), 0, Math.Max(0, 100 - start));
+    }
+
+    private static string Share(WatchHistoryEntry entry)
+    {
+        var share = entry.WatchedSeconds / entry.DurationSeconds * 100;
+        return $"{share.ToString("0", CultureInfo.InvariantCulture)}% of the film";
+    }
+
+    private static string Tooltip(WatchHistoryEntry entry)
+    {
+        var span = $"{entry.Title}\n{Clock(entry.FromSeconds)} – {Clock(entry.ToSeconds)} ({Clock(entry.WatchedSeconds)} covered)";
+        return entry.DurationSeconds > 0
+            ? $"{span}\nFilm length {Clock(entry.DurationSeconds)}"
+            : span;
+    }
+
+    // Invariant culture on purpose: a locale that writes decimals with a comma would
+    // emit "left: 12,5%" and the browser would drop the declaration.
+    private static string Pct(double value) =>
+        value.ToString("0.###", CultureInfo.InvariantCulture) + "%";
+
+    private static string Clock(double seconds)
+    {
+        if (double.IsNaN(seconds) || seconds < 0)
+            seconds = 0;
+
+        var span = TimeSpan.FromSeconds(Math.Round(seconds));
+
+        return span.TotalHours >= 1
+            ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
+            : $"{span.Minutes}:{span.Seconds:00}";
+    }
+
+    // Invariant rather than the server's culture, so the day names match the rest of
+    // the (English) interface instead of following the host's locale.
+    private static string DayLabel(DateOnly day)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+
+        if (day == today)
+            return "Today";
+        if (day == today.AddDays(-1))
+            return "Yesterday";
+
+        return day.ToDateTime(TimeOnly.MinValue)
+            .ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture);
+    }
+}

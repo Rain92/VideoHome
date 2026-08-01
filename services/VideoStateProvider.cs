@@ -14,6 +14,11 @@ public class VideoStateDto
     public List<string> CaptionsLang { get; set; } = new();
     public List<string> CaptionsPath { get; set; } = new();
     public double VideoTimestamp { get; set; }
+
+    // Length of the current video, or 0 before the browser has read its metadata.
+    // Only the watch history uses it: it is what lets a recorded span be shown as a
+    // portion of the whole film rather than a pair of bare numbers.
+    public double Duration { get; set; }
     public DateTimeOffset RecievedTime { get; set; }
     public string? Author { get; set; }
 

@@ -1,69 +1,62 @@
-﻿@using VideoHome.Services
+<header class="top-nav">
+    @* The iconify script swaps its placeholder span out for an <svg>, taking any
+       styling hooks on it with it - so the tile is a wrapper we own instead. *@
+    <a class="top-nav-brand" href="">
+        <span class="brand-mark" aria-hidden="true">
+            <span class="iconify" data-icon="material-symbols:movie" data-width="20" data-height="20"></span>
+        </span>
+        <span class="brand-text">VideoHome</span>
+    </a>
 
-<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">
-            Video Homeee
-        </a>
+    <button class="top-nav-toggler" title="Menu" @onclick="ToggleNavMenu" aria-expanded="@(!collapseNavMenu)">
+        <span class="iconify" data-icon="material-symbols:menu" data-width="24" data-height="24" aria-hidden="true"></span>
+    </button>
+
+    <nav class="top-nav-links @(collapseNavMenu ? "is-collapsed" : "")" @onclick="CloseNavMenu">
         <AuthorizeView>
             <Authorized>
-                <div class="navbar-greeting">
-                    Hello @context.User.Identity.Name :3
-                </div>
-            </Authorized>
-        </AuthorizeView>
-        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-    </div>
-</div>
-
-<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
-    <nav class="flex-column">
-        <AuthorizeView>
-            <Authorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                        <span class="oi oi-home" aria-hidden="true"></span> Home
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="counter">
-                        <span class="oi oi-plus" aria-hidden="true"></span> Counter
-                    </NavLink>
-                </div>
-                @* <div class="nav-item px-3">
-                <NavLink class="nav-link" href="test">
-                <span class="oi oi-plus" aria-hidden="true"></span> Test
+                <NavLink class="nav-item" href="" Match="NavLinkMatch.All">
+                    <span class="iconify" data-icon="material-symbols:home" data-width="20" data-height="20" aria-hidden="true"></span>
+                    <span>Home</span>
                 </NavLink>
-                </div> *@
-                <li class="nav-item px-3">
-                    @* A plain link, not a NavLink: clearing the cookie needs a real request
-                       to /logout, which an in-circuit navigation would skip. *@
-                    <a class="nav-link" href="logout">
-                        <span class="iconify-style iconify" data-icon="material-symbols:door-open" aria-hidden="true"
-                            data-width="28" data-height="28"></span> Logout
-                    </a>
-                </li>
+
+                <NavLink class="nav-item" href="history">
+                    <span class="iconify" data-icon="material-symbols:history" data-width="20" data-height="20" aria-hidden="true"></span>
+                    <span>History</span>
+                </NavLink>
+
+                @* A plain link, not a NavLink: clearing the cookie needs a real request
+                   to /logout, which an in-circuit navigation would skip. *@
+                <a class="nav-item" href="logout">
+                    <span class="iconify" data-icon="material-symbols:door-open" data-width="20" data-height="20" aria-hidden="true"></span>
+                    <span>Logout</span>
+                </a>
+
+                <div class="top-nav-greeting" title="Signed in as @context.User.Identity?.Name">
+                    <span class="iconify" data-icon="material-symbols:person" data-width="20" data-height="20" aria-hidden="true"></span>
+                    <span class="greeting-text">@context.User.Identity?.Name</span>
+                </div>
             </Authorized>
             <NotAuthorized>
-                <li class="nav-item px-3">
-                    <NavLink class="nav-link" href="login">
-                        <span class="oi oi-home" aria-hidden="true"></span> Login
-                    </NavLink>
-                </li>
+                <NavLink class="nav-item" href="login">
+                    <span class="iconify" data-icon="material-symbols:login" data-width="20" data-height="20" aria-hidden="true"></span>
+                    <span>Login</span>
+                </NavLink>
             </NotAuthorized>
         </AuthorizeView>
     </nav>
-</div>
+</header>
 
 @code {
     private bool collapseNavMenu = true;
 
-    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
-
     private void ToggleNavMenu()
     {
         collapseNavMenu = !collapseNavMenu;
+    }
+
+    private void CloseNavMenu()
+    {
+        collapseNavMenu = true;
     }
 }

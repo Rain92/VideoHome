@@ -14,10 +14,13 @@ namespace VideoHome.Server.Hubs
         private const int Numpings = 5;
 
         private readonly VideoStateProvider _stateProvider;
-        public SyncVideoHub(VideoStateProvider stateProvider, ILogger<SyncVideoHub> logger)
+        private readonly WatchHistoryService _history;
+
+        public SyncVideoHub(VideoStateProvider stateProvider, WatchHistoryService history, ILogger<SyncVideoHub> logger)
         {
             _logger = logger;
             _stateProvider = stateProvider;
+            _history = history;
         }
 
         public async Task RequestState()
@@ -37,6 +40,12 @@ namespace VideoHome.Server.Hubs
             _stateProvider.RemoveUser(Context.ConnectionId);
 
             _logger.LogInformation($"User disconnected:  {user}. Number of users is {_stateProvider.NumConnectedClients}");
+
+            // Nobody left to report a pause, so whatever was playing has effectively
+            // stopped. Without this, watching a film to the end and just closing the tab
+            // would leave no trace in the history at all.
+            if (_stateProvider.NumConnectedClients == 0)
+                _history.FlushOpenSpan("last client disconnected");
 
             // Everyone still here needs the new list - the caller is the one leaving.
             await Clients.All.SendAsync("ConnectedUsersChanged", _stateProvider.ListConnectedUsers());
@@ -79,6 +88,10 @@ namespace VideoHome.Server.Hubs
 
             if (_stateProvider.UpdateVideoState(newstate))
             {
+                // Only accepted updates: an echo is one client repeating what it was
+                // handed, and counting it would record the same watching twice.
+                _history.Observe(newstate);
+
                 _logger.LogInformation($"State received by {_stateProvider.GetUser(Context.ConnectionId)}. Updating other clients.");
                 await Clients.Others.SendAsync("ReceiveState", _stateProvider.CurrentVideoState);
             }
