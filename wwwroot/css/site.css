@@ -290,20 +290,47 @@ label { margin-bottom: 0.4rem; }
 }
 
 /* ============ BootstrapBlazor touches ============ */
-.tree-view .tree-item .tree-node {
-  color: var(--ink-2);
-  border-radius: var(--radius-sm);
-  padding-block: 0.2rem;
-  transition: background 120ms var(--ease), color 120ms var(--ease);
+/* The tree view's hover and selected states default to
+   rgba(var(--bs-body-color-rgb), 0.08 / 0.12) - a wash of Bootstrap's *text*
+   colour, which is near-black here, so both states were all but invisible against
+   a dark panel. Overriding the variables rather than their rules keeps this
+   working if the component's internals move.
+
+   Note the state lands on .tree-content-body via .tree-content:hover/.active -
+   NOT on .tree-node. An earlier version of this block styled
+   `.tree-item .tree-node`; .tree-item only exists in the component's loading
+   skeleton, so none of those rules ever matched anything. */
+.tree-view {
+  --bb-tree-item-hover-bg: #ffffff14;
+  --bb-tree-item-hover-color: var(--ink-1);
+  --bb-tree-item-active-bg: var(--accent-soft);
+  --bb-tree-item-active-color: var(--accent);
+
+  /* Their own spacing knobs, rather than piling extra padding on the node. */
+  --bb-tree-node-padding: 0.35rem 0.5rem;
+  --bb-tree-item-margin: 2px 0;
+  --bb-tree-item-bg-radius: var(--radius-sm);
 }
-.tree-view .tree-item .tree-node:hover,
-.tree-view .tree-item .tree-node.active {
-  background-color: var(--bg-3);
-  color: var(--ink-1);
+
+.tree-view .tree-content .tree-content-body {
+  transition: background-color 120ms var(--ease), color 120ms var(--ease);
 }
-.tree-view .tree-item .tree-node.active { color: var(--accent); }
-.tree-view .fa { color: var(--ink-3); }
-.tree-view .tree-item .tree-node.active .fa { color: var(--accent); }
+
+.tree-view .tree-node { color: var(--ink-2); }
+.tree-view .tree-node .tree-icon { color: var(--ink-3); }
+
+/* The caret that expands a folder. */
+.tree-view .tree-content .node-icon { color: var(--ink-3); }
+
+/* Their rules colour .tree-content-body, which .tree-node would inherit - except
+   the base rule above sets it explicitly, so the states have to be restated at a
+   specificity that wins. */
+.tree-view .tree-content:hover .tree-node { color: var(--ink-1); }
+.tree-view .tree-content:hover .tree-node .tree-icon { color: var(--ink-2); }
+
+/* Selected reads in the accent, the same language as the nav's active item. */
+.tree-view .tree-content.active .tree-node,
+.tree-view .tree-content.active .tree-node .tree-icon { color: var(--accent); }
 
 /* ============ Utility ============ */
 .card-panel {
