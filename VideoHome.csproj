@@ -8,12 +8,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BootstrapBlazor" Version="10.2.2" />
-    <PackageReference Include="BootstrapBlazor.FontAwesome" Version="10.0.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.2" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.2" />
+    <PackageReference Include="BootstrapBlazor" Version="10.9.0" />
+    <PackageReference Include="BootstrapBlazor.FontAwesome" Version="10.0.3" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.10" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.10" />
     <PackageReference Include="Blazored.Video" Version="1.0.1" />
-    <PackageReference Include="MudBlazor" Version="8.15.0" />
+    <PackageReference Include="MudBlazor" Version="9.7.0" />
     <PackageReference Include="SoloX.BlazorLayout" Version="1.0.0-alpha.9" />
     <PackageReference Include="YoutubeExplode" Version="6.6.0" />
     <!-- YoutubeExplode pulls in AngleSharp 1.4.0, which carries GHSA-pgww-w46g-26qg

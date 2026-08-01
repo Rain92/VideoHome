@@ -160,12 +160,11 @@
     transition: box-shadow 900ms ease;
 }
 
-/* Once the backlight is carrying the glow, drop the static amber one so the
-   video's own colours are the only thing tinting the page. */
-.video-shell.is-lit .video-frame {
-    box-shadow: 0 0 0 1px var(--line-1),
-                0 28px 64px -28px rgb(0 0 0 / 0.95);
-}
+/* No .is-lit override here any more. This rule used to strip a static amber glow
+   out of --shadow-stage once the backlight took over - which meant the amber one
+   was what showed while the backlight was off. That glow is gone from the token
+   entirely, so off now means off and the transition above only has the backlight
+   to fade. */
 
 /* ::deep is required: the <video> is rendered by BlazoredVideo, so it never
    carries this component's scope attribute and a plain descendant selector

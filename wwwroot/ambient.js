@@ -15,13 +15,16 @@
     const FPS = 5;
     const STORAGE_KEY = 'videohome.ambient';
 
+    // Off unless switched on: the backlight is an effect people should opt into, not
+    // something that greets them on first load.
+    //
     // Private browsing and blocked-storage setups throw on access rather than
     // returning null, so every touch of localStorage is guarded.
     function readStored() {
         try {
-            return localStorage.getItem(STORAGE_KEY) !== 'off';
+            return localStorage.getItem(STORAGE_KEY) === 'on';
         } catch {
-            return true;
+            return false;
         }
     }
 
@@ -72,7 +75,10 @@
 
     setInterval(tick, 1000 / FPS);
 
-    window.videoHome = {
+    // Merged rather than assigned: dashplayer.js hangs its own functions off the same
+    // object, and whichever of the two loaded second would otherwise erase the first.
+    window.videoHome = window.videoHome || {};
+    Object.assign(window.videoHome, {
         getAmbient: () => enabled,
 
         setAmbient: on => {
@@ -87,5 +93,5 @@
                 document.querySelector('.video-shell')?.classList.remove('is-lit');
             }
         },
-    };
+    });
 })();

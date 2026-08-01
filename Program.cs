@@ -66,6 +66,9 @@ services.AddBootstrapBlazor(options =>
         options.ToastDelay = 4000;
     });
 services.AddSingleton<VideoStateProvider>();
+// YoutubeStreamService fetches byte ranges from googlevideo directly, so it needs a pooled
+// client rather than one HttpClient per request.
+services.AddHttpClient();
 services.AddSingleton<YoutubeStreamService>();
 services.AddSingleton<WatchHistoryService>();
 services.AddHostedService<VideoStatePersistenceService>();
@@ -138,10 +141,84 @@ app.UseWhen(
 app.MapBlazorHub();
 app.MapHub<SyncVideoHub>("/syncvideohub");
 
-// Both browsers play a YouTube video through here rather than being handed the signed
-// googlevideo URL, which is bound to this server's IP and expires in a few hours. Range
-// support is what makes the progress bar work, and it is why the underlying stream has to
-// be seekable rather than just piped.
+// The HD path. YouTube publishes nothing above 360p as a single file, so the separate video
+// and audio tracks are described to the browser as a DASH manifest and dash.js stitches them
+// together client side through Media Source Extensions. Nothing is transcoded here.
+//
+// BaseURL entries inside are relative, so the representation URLs resolve against this route.
+app.MapGet("/youtube/{videoId}/manifest.mpd", async (
+        string videoId,
+        YoutubeStreamService youtube,
+        CancellationToken cancellationToken) =>
+    {
+        var id = YoutubeStreamService.TryParseVideoId(videoId);
+        if (id is null)
+            return Results.BadRequest("Not a YouTube video id.");
+
+        var set = await youtube.ResolveDashAsync(id, cancellationToken);
+        if (set is null)
+            return Results.NotFound("That video has no adaptive streams this player can use.");
+
+        // No caching: the manifest names byte ranges into URLs that expire within hours, so a
+        // stale copy would point the player at streams that no longer answer.
+        return Results.Text(DashManifestBuilder.Build(set), "application/dash+xml");
+    })
+    .RequireAuthorization();
+
+// One representation of a DASH video - a single rung of the resolution ladder, or the audio
+// track. dash.js only ever asks for ranges (init segment, index, then media a chunk at a
+// time), so the request is forwarded upstream as-is and the response streamed straight back.
+app.MapGet("/youtube/{videoId}/{representationId}", async (
+        string videoId,
+        string representationId,
+        HttpContext context,
+        YoutubeStreamService youtube,
+        CancellationToken cancellationToken) =>
+    {
+        var id = YoutubeStreamService.TryParseVideoId(videoId);
+        if (id is null)
+            return Results.BadRequest("Not a YouTube video id.");
+
+        var set = await youtube.ResolveDashAsync(id, cancellationToken);
+        var representation = set?.Find(representationId);
+        if (representation is null)
+            return Results.NotFound("No such stream.");
+
+        using var upstream = await youtube.OpenRangeAsync(
+            representation, context.Request.Headers.Range, cancellationToken);
+
+        if (!upstream.IsSuccessStatusCode)
+            return Results.StatusCode((int)upstream.StatusCode);
+
+        var response = context.Response;
+        // 206 upstream has to stay 206 downstream, or the player treats a partial body as the
+        // whole stream.
+        response.StatusCode = (int)upstream.StatusCode;
+        response.ContentType = representation.IsAudio ? "audio/mp4" : "video/mp4";
+        response.Headers.AcceptRanges = "bytes";
+
+        if (upstream.Content.Headers.ContentLength is { } length)
+            response.ContentLength = length;
+        if (upstream.Content.Headers.ContentRange is { } contentRange)
+            response.Headers.ContentRange = contentRange.ToString();
+
+        try
+        {
+            await upstream.Content.CopyToAsync(response.Body, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Seeking abandons in-flight requests by design; nothing has gone wrong.
+        }
+
+        return Results.Empty;
+    })
+    .RequireAuthorization();
+
+// The 360p fallback, kept for browsers without Media Source Extensions - dash.js cannot run
+// there, so the player points the element at this single muxed file instead. Range support is
+// what makes the progress bar work, and it is why the underlying stream has to be seekable
+// rather than just piped.
 app.MapGet("/youtube/{videoId}", async (
         string videoId,
         YoutubeStreamService youtube,

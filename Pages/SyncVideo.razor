@@ -63,7 +63,13 @@
                                    muted
                                    EventFired="OnEvent"
                                    VideoEventOptions="options">
-                        <source src="@videoSource" type="video/mp4"/>
+                        @* Omitted for a DASH manifest: dash.js owns the element's src there,
+                           and letting the browser try to load an .mpd as video/mp4 first only
+                           earns a failed request. *@
+                        @if (!IsDashSource)
+                        {
+                            <source src="@videoSource" type="video/mp4"/>
+                        }
                         <!-- Caption files -->
                         @for (var i = 0; i < videoCaptions.Count; i++)
                         {
@@ -206,8 +212,9 @@
     private void ToggleTheater() => theaterMode = !theaterMode;
 
     // Mirrors what ambient.js has in localStorage; read back in OnInitializedAsync
-    // so the button starts out matching the backlight that's actually running.
-    private bool ambientEnabled = true;
+    // so the button starts out matching the backlight that's actually running. Starts
+    // false to match ambient.js's own default - the backlight is opt-in.
+    private bool ambientEnabled = false;
 
     private async Task ToggleAmbient()
     {
@@ -229,6 +236,59 @@
     // PlayYoutube points both clients at our own /youtube/{id} proxy route, so the
     // prefix is what distinguishes a stream from a file off disk.
     private bool IsYoutubeSource => videoSource?.StartsWith("/youtube/", StringComparison.Ordinal) == true;
+
+    // A DASH manifest is handed to dash.js instead of to the element directly. Kept as a
+    // suffix check on the source rather than a separate flag so it survives a source that
+    // arrived from the hub or from persisted state, not just one this client chose.
+    private bool IsDashSource => videoSource?.EndsWith("/manifest.mpd", StringComparison.Ordinal) == true;
+
+    // The single place a source reaches the browser. dash.js has to attach instead of the
+    // element loading a URL, and a browser without Media Source Extensions cannot run it at
+    // all - so that case drops to the muxed stream. videoSource deliberately keeps naming the
+    // manifest either way: it is what the shared state holds, the other client may well
+    // support DASH, and every comparison against incoming state reads it.
+    private async Task ApplySourceToPlayer(string src)
+    {
+        if (!IsDashSource)
+        {
+            await DetachDash();
+            await videoRef.SetSrcAsync(src);
+            return;
+        }
+
+        bool attached;
+        try
+        {
+            attached = await JS.InvokeAsync<bool>("videoHome.attachDash", src);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Client: dash.js could not be started: {Error}", ex.Message);
+            attached = false;
+        }
+
+        if (attached)
+            return;
+
+        // "/youtube/{id}/manifest.mpd" -> "/youtube/{id}", the 360p single-file route.
+        var muxed = src[..src.LastIndexOf('/')];
+        logger.LogInformation("Client: no DASH support here, falling back to {Source}.", muxed);
+        await videoRef.SetSrcAsync(muxed);
+    }
+
+    private async Task DetachDash()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("videoHome.detachDash");
+        }
+        catch (Exception ex)
+        {
+            // Nothing was attached, or the circuit is going away. Neither should block the
+            // source that is about to load.
+            logger.LogDebug("Client: detaching dash.js failed: {Error}", ex.Message);
+        }
+    }
 
     private static string Initial(string name)
         => string.IsNullOrWhiteSpace(name) ? "?" : char.ToUpperInvariant(name.Trim()[0]).ToString();
@@ -256,8 +316,9 @@
         try
         {
             // Resolve here so a bad link is reported now, while someone is looking at the
-            // screen, rather than silently becoming a video that will not load.
-            var resolved = await Youtube.ResolveAsync(videoId, CancellationToken.None);
+            // screen, rather than silently becoming a video that will not load. Resolving also
+            // fills the server's cache, so the manifest request that follows is already warm.
+            var resolved = await Youtube.ResolveDashAsync(videoId, CancellationToken.None);
             if (resolved is null)
             {
                 await ToastService.Error("Youtube", "That video has no stream this player can use.");
@@ -267,7 +328,7 @@
             // Point both of us at our own server. The URL YouTube hands back is signed for
             // this machine's IP and expires within hours, so sending it to the other side -
             // which is what used to happen - could never have played there.
-            await SetVideoSource($"/youtube/{videoId}", setCaptions: false, title: resolved.Value.Title);
+            await SetVideoSource($"/youtube/{videoId}/manifest.mpd", setCaptions: false, title: resolved.Title);
         }
         catch (Exception ex)
         {
@@ -440,7 +501,7 @@
             // for the client to have applied it, so ReloadControl() could fire the
             // reload before the browser ever saw the new src - reloading the OLD/empty
             // source and leaving the element stuck at networkState=NO_SOURCE.
-            await videoRef.SetSrcAsync(videoSource ?? "");
+            await ApplySourceToPlayer(videoSource ?? "");
             await InvokeAsync(StateHasChanged);
             await WaitForVideoReadyAsync();
             await videoRef.SetCurrentTimeAsync(0);
@@ -695,7 +756,7 @@
                     // which raced the render batch reaching the client (StateHasChanged
                     // only schedules a render, it doesn't wait for delivery) and could
                     // fire the reload against the still-old/empty source.
-                    await videoRef.SetSrcAsync(videoSource);
+                    await ApplySourceToPlayer(videoSource);
                     await InvokeAsync(StateHasChanged);
 
                     // This used to only be waited for when !isInitialLoad (it was tied

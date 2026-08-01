@@ -14,8 +14,10 @@
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
     <link href="_content/BootstrapBlazor.FontAwesome/css/font-awesome.min.css" rel="stylesheet">
 
-    <link href="css/site.css" rel="stylesheet" />
-    <link href="VideoHome.styles.css" rel="stylesheet" />
+    @* Fingerprinted, as Login.cshtml already does: without it the browser holds on to
+       the old stylesheet and a CSS change looks like it simply did not work. *@
+    <link href="css/site.css" rel="stylesheet" asp-append-version="true" />
+    <link href="VideoHome.styles.css" rel="stylesheet" asp-append-version="true" />
     <link rel="icon" type="image/png" href="favicon.png"/>
     <component type="typeof(HeadOutlet)" render-mode="Server" />
 </head>
@@ -33,10 +35,15 @@
         <a class="dismiss">🗙</a>
     </div>
 
-    <script src="ping.js" ></script>
-    @* No defer: window.videoHome must exist before the circuit starts, since
-       SyncVideo reads the ambient setting while it initialises. *@
-    <script src="ambient.js"></script>
+    <script src="ping.js" asp-append-version="true"></script>
+    @* dash.js first: dashplayer.js only touches it from inside a call, but a YouTube source
+       restored from persisted state is attached very early on. *@
+    <script src="dash.all.min.js" asp-append-version="true"></script>
+    @* No defer on either: window.videoHome must exist before the circuit starts, since
+       SyncVideo reads the ambient setting while it initialises. Both files merge into that
+       one object rather than assigning it, so the order between them does not matter. *@
+    <script src="ambient.js" asp-append-version="true"></script>
+    <script src="dashplayer.js" asp-append-version="true"></script>
     <script src="_framework/blazor.server.js"></script>
     <script src="https://code.iconify.design/3/3.1.0/iconify.min.js"></script>
 

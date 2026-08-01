@@ -39,10 +39,14 @@
 
   --shadow-1: 0 1px 2px 0 rgb(0 0 0 / 0.35);
   --shadow-2: 0 4px 16px -2px rgb(0 0 0 / 0.4), 0 0 0 1px var(--line-1);
-  /* Cinema drop for the player: deep floor shadow plus a faint amber bounce. */
+  /* Cinema drop for the player: hairline edge plus a deep floor shadow. Structural -
+     it reads as depth rather than light, so it is always on. */
   --shadow-stage: 0 0 0 1px var(--line-1),
-                  0 28px 64px -28px rgb(0 0 0 / 0.95),
-                  0 0 140px -55px var(--accent);
+                  0 28px 64px -28px rgb(0 0 0 / 0.95);
+  /* There used to be a third layer here, `0 0 140px -55px var(--accent)`: a static
+     amber bounce that stood in for the backlight whenever the backlight was off.
+     Two glows for one switch, so turning the ambient light off still left the page
+     glowing. The backlight is now the only thing that lights the player. */
 
   --header-h: 56px;
   --ease: cubic-bezier(0.2, 0.6, 0.3, 1);
