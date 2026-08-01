@@ -14,6 +14,8 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject ILogger<SyncVideo> logger
 @inject ToastService ToastService
+@inject AppHubToken HubToken
+@inject YoutubeStreamService Youtube
 
 <DockContainer Fill="Fill.Full" Proportion="75">
     <DockPanel Class="px-4" Side="Side.Left">
@@ -134,20 +136,40 @@
 
     List<(string, string)> videoCaptions = new();
 
-    private readonly YoutubeClient youtube = new();
     DotNetObjectReference<SyncVideo>? dotnetRef;
 
     private async Task PlayYoutube()
     {
-        var url = streamInputBoxContent;
-        if (url == null || !url.Contains("youtube.") || !url.Contains("watch?v="))
+        var videoId = YoutubeStreamService.TryParseVideoId(streamInputBoxContent);
+        if (videoId is null)
+        {
+            await ToastService.Error("Youtube", "That does not look like a YouTube link or video id.");
             return;
+        }
 
-        logger.LogInformation($"Getting youtube video for {url}");
-        var streamManifest = await youtube.Videos.Streams.GetManifestAsync(url);
-        var streamInfo = streamManifest.GetMuxedStreams().GetWithHighestVideoQuality();
-        logger.LogInformation(streamInfo.Url);
-        await SetVideoSource(streamInfo.Url, false);
+        try
+        {
+            // Resolve here so a bad link is reported now, while someone is looking at the
+            // screen, rather than silently becoming a video that will not load.
+            var resolved = await Youtube.ResolveAsync(videoId, CancellationToken.None);
+            if (resolved is null)
+            {
+                await ToastService.Error("Youtube", "That video has no stream this player can use.");
+                return;
+            }
+
+            // Point both of us at our own server. The URL YouTube hands back is signed for
+            // this machine's IP and expires within hours, so sending it to the other side -
+            // which is what used to happen - could never have played there.
+            await SetVideoSource($"/youtube/{videoId}", setCaptions: false, title: resolved.Value.Title);
+        }
+        catch (Exception ex)
+        {
+            // Previously this method had no handling at all, so a failure took the whole
+            // page down with it.
+            logger.LogError(ex, "Could not load youtube video {VideoId}.", videoId);
+            await ToastService.Error("Youtube", "Could not load that video.");
+        }
     }
 
     private async Task ItemClicked(TreeViewItem<FileTreeViewItem> treeitem)
@@ -211,6 +233,43 @@
         _ => "en"
     };
 
+    private bool videoInteropReady;
+
+    // BlazoredVideo only creates the JS handle it drives the element through once its own
+    // first render has completed, and a state push can easily beat that: signing in is a
+    // real redirect now, so the page comes up with the shared state already waiting and the
+    // very first thing we do is reach for a player that is not wired up yet. The interop
+    // then throws, which used to vanish into the hub callback and leave a dead player.
+    // Waiting also means a state arriving this early is applied instead of being dropped.
+    private async Task<bool> WaitForVideoInteropAsync()
+    {
+        if (videoInteropReady)
+            return true;
+
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if (videoRef is not null)
+            {
+                try
+                {
+                    // Any read will do - we only care that the handle behind it exists.
+                    await videoRef.GetReadyStateAsync();
+                    videoInteropReady = true;
+                    return true;
+                }
+                catch (ArgumentNullException)
+                {
+                    // Not wired up yet; the handle appears when its first render finishes.
+                }
+            }
+
+            await Task.Delay(50);
+        }
+
+        logger.LogWarning("Client: The video element never became usable from the server.");
+        return false;
+    }
+
     // Waits for the video element to report LoadedMetadata, with a timeout fallback
     // so a stalled/broken source can't hang the sync flow forever.
     private async Task WaitForVideoReadyAsync()
@@ -243,8 +302,11 @@
         return ret;
     }
 
-    private async Task SetVideoSource(string src, bool setCaptions)
+    private async Task SetVideoSource(string src, bool setCaptions, string? title = null)
     {
+        if (!await WaitForVideoInteropAsync())
+            return;
+
         // Pausing and reloading below makes the player raise its own events while
         // videoSource already points at the new file. Hold those back, otherwise we
         // publish the new source together with the old video's position.
@@ -253,7 +315,10 @@
         {
             videoSource = src;
             videoCaptions = setCaptions ? GetCaptions(src) : new();
-            videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
+
+            // A local file's name is its title; a YouTube source is just an id, so the
+            // caller passes the real one.
+            videoSourceTitle = title ?? videoSource?.Split('/').LastOrDefault() ?? "";
 
             // The cached state still describes the previous video. A fresh source
             // always starts at zero, so reset before anyone can read it.
@@ -386,7 +451,13 @@
         username = authstate.User?.Identity?.Name ?? "Invalid";
 
         var connection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/syncvideohub"), o => { o.UseDefaultCredentials = true; })
+            .WithUrl(Navigation.ToAbsoluteUri("/syncvideohub"), o =>
+            {
+                // This component runs on the server, so the hub connection is this process
+                // talking to itself and carries no user cookie. The hub authorises it by
+                // this token instead; it never goes near the browser.
+                o.AccessTokenProvider = () => Task.FromResult<string?>(HubToken.Value);
+            })
             .WithAutomaticReconnect()
             .Build();
         hubConnection = connection;
@@ -418,8 +489,14 @@
             }
         };
 
-        await connection.StartAsync();
-        await connection.SendAsync("RegisterUser", username);
+        // Everything from here on is what makes the page usable at all, and none of it is
+        // retried anywhere else. If the connection or the registration fails, the page would
+        // otherwise sit there looking like a working player that simply never syncs - the
+        // same silent failure that used to leave a joining client staring at a blank video.
+        try
+        {
+            await connection.StartAsync();
+            await connection.SendAsync("RegisterUser", username);
 
         // This used to be sent from OnAfterRenderAsync(firstRender: true) - but Blazor
         // paints the component's first frame immediately once OnInitializedAsync starts
@@ -430,8 +507,14 @@
         // it was never retried. A freshly joined client would register with the hub but
         // never actually ask it for the current video, staying blank until someone
         // else's unrelated action happened to push a new state.
-        await JS.InvokeVoidAsync("ping", dotnetRef, 0, DateTimeOffset.UtcNow).AsTask();
-        await connection.SendAsync("RequestState");
+            await JS.InvokeVoidAsync("ping", dotnetRef, 0, DateTimeOffset.UtcNow).AsTask();
+            await connection.SendAsync("RequestState");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Could not join the sync session.");
+            await ToastService.Error("Sync", "Could not connect to the sync session - reload the page to retry.");
+        }
     }
 
     [JSInvokable("Pong")]
@@ -453,6 +536,7 @@
         {
             IsPlaying = !videoState.Paused,
             Source = videoSource,
+            Title = videoSourceTitle,
             CaptionsLang = videoCaptions.Select(t => t.Item1).ToList(),
             CaptionsPath = videoCaptions.Select(t => t.Item2).ToList(),
             VideoTimestamp = videoState.CurrentTime
@@ -463,7 +547,9 @@
 
     private async Task StateRecieved(VideoStateDto newstate)
     {
-        if (videoRef is null)
+        // Not "give up if the player isn't ready": a freshly loaded page gets its state
+        // pushed immediately, so bailing out here would drop the only update it receives.
+        if (!await WaitForVideoInteropAsync())
             return;
 
         suppressSendDepth++;
@@ -476,7 +562,9 @@
                 logger.LogInformation("Client: Setting video source.");
                 videoSource = newstate.Source;
                 videoCaptions = newstate.CaptionsLang.Zip(newstate.CaptionsPath).ToList();
-                videoSourceTitle = videoSource?.Split('/').LastOrDefault() ?? "";
+                videoSourceTitle = string.IsNullOrEmpty(newstate.Title)
+                    ? videoSource?.Split('/').LastOrDefault() ?? ""
+                    : newstate.Title;
 
                 // Cached state belongs to the previous video - a new source is at zero.
                 videoState = new VideoState { Paused = true, CurrentTime = 0 };
@@ -538,6 +626,13 @@
             }
 
             await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            // This runs as a hub callback, so anything thrown here is simply dropped by
+            // SignalR: the player would be left half-configured with nothing logged, which
+            // looks exactly like the video "just not loading".
+            logger.LogError(ex, "Client: Failed to apply received state.");
         }
         finally
         {

@@ -3,6 +3,8 @@
 # Project specific files
 **/counterstate.txt
 **/users.json
+**/videostate.json
+**/videostate.json.tmp
 
 # User-specific files
 *.suo

@@ -4,7 +4,10 @@ using VideoHome.Services;
 
 namespace VideoHome.Server.Hubs
 {
-    // [Authorize]
+    // Only our own server-side components may drive playback. The browser never connects
+    // here (see AppHubToken); before this, anyone who could reach the port could change the
+    // video, seek it, or register themselves as a user.
+    [Authorize(AuthenticationSchemes = AppHubToken.SchemeName)]
     public class SyncVideoHub : Hub
     {
         private readonly ILogger _logger;

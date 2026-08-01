@@ -5,6 +5,7 @@
 @using VideoHome.Services;
 @inject NavigationManager Navigation
 @inject CounterService CounterService;
+@inject AppHubToken HubToken
 
 
 <PageTitle>Click Counter</PageTitle>
@@ -24,7 +25,10 @@
         counter = CounterService.GlobalCounter;
 
         hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/counterhub"))
+            .WithUrl(Navigation.ToAbsoluteUri("/counterhub"), o =>
+            {
+                o.AccessTokenProvider = () => Task.FromResult<string?>(HubToken.Value);
+            })
             .Build();
 
         hubConnection.On<int>("UpdateCounter", (newcounter) =>

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace VideoHome.Server.Hubs
 {
-    // [Authorize]
+    [Authorize(AuthenticationSchemes = AppHubToken.SchemeName)]
     public class CounterHub : Hub
     {
 

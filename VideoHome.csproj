@@ -15,7 +15,13 @@
     <PackageReference Include="Blazored.Video" Version="1.0.1" />
     <PackageReference Include="MudBlazor" Version="8.15.0" />
     <PackageReference Include="SoloX.BlazorLayout" Version="1.0.0-alpha.9" />
-    <PackageReference Include="YoutubeExplode" Version="6.5.6" />
+    <PackageReference Include="YoutubeExplode" Version="6.6.0" />
+    <!-- YoutubeExplode pulls in AngleSharp 1.4.0, which carries GHSA-pgww-w46g-26qg
+         (fixed in 1.5.0). Referenced directly only to lift that transitive version.
+         Do not bump blindly: 1.7.0 builds fine but breaks YoutubeExplode's page parsing
+         at runtime, so /youtube/{id} starts returning 500. Re-run the youtube check
+         after any change here. -->
+    <PackageReference Include="AngleSharp" Version="1.5.0" />
   </ItemGroup>
 
   <ItemGroup>

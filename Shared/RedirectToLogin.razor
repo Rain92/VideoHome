@@ -1,0 +1,14 @@
+@inject NavigationManager Navigation
+
+@code {
+    // Reaching an [Authorize] page without a cookie. forceLoad matters: signing in has to be
+    // a real HTTP round trip so the cookie can be set, which an in-circuit navigation
+    // would not give us.
+    protected override void OnInitialized()
+    {
+        var returnUrl = Uri.EscapeDataString(
+            Navigation.ToBaseRelativePath(Navigation.Uri));
+
+        Navigation.NavigateTo($"login?returnUrl=/{returnUrl}", forceLoad: true);
+    }
+}

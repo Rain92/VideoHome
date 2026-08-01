@@ -1,0 +1,45 @@
+@page "/login"
+@model VideoHome.Pages.LoginModel
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login - Video Home</title>
+    <link href="~/css/bootstrap/bootstrap.min.css" rel="stylesheet" />
+    <link href="~/css/site.css" rel="stylesheet" asp-append-version="true" />
+    <link rel="icon" type="image/png" href="~/favicon.png" />
+</head>
+
+<body>
+    <div class="col-md-6 offset-md-3 mt-5">
+        <div class="card">
+            <h4 class="card-header">Login</h4>
+            <div class="card-body">
+                <form method="post">
+                    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                    <div class="form-group">
+                        <label asp-for="Input.Username">Username</label>
+                        <input asp-for="Input.Username" class="form-control" autocomplete="username" autofocus />
+                        <span asp-validation-for="Input.Username" class="text-danger"></span>
+                    </div>
+                    <div class="form-group mt-2">
+                        <label asp-for="Input.Password">Password</label>
+                        <input asp-for="Input.Password" type="password" class="form-control"
+                               autocomplete="current-password" />
+                        <span asp-validation-for="Input.Password" class="text-danger"></span>
+                    </div>
+                    <button type="submit" class="btn btn-primary mt-3">Login</button>
+                    @if (!string.IsNullOrEmpty(Model.Error))
+                    {
+                        <div class="alert alert-danger mt-3 mb-0">@Model.Error</div>
+                    }
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

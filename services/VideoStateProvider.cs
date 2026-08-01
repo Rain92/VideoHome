@@ -5,6 +5,12 @@ public class VideoStateDto
 {
     public bool IsPlaying { get; set; }
     public string? Source { get; set; }
+
+    // What to show above the player. For a local file the filename says it all, but a
+    // YouTube source is just /youtube/<id>, so the real title has to travel with the state.
+    // Anything added here must also be copied in SyncVideo's GetStateDto, which builds a
+    // fresh DTO - a field it misses is wiped by the next update any client sends.
+    public string? Title { get; set; }
     public List<string> CaptionsLang { get; set; } = new();
     public List<string> CaptionsPath { get; set; } = new();
     public double VideoTimestamp { get; set; }
@@ -72,6 +78,21 @@ public class VideoStateProvider
 
     public VideoStateDto CurrentVideoState { get; private set; } = new() { RecievedTime = DateTimeOffset.UtcNow};
 
+    // Seeds the state from disk at startup. Author stays null on purpose: the connection
+    // that produced this state died with the previous process, and a null Author is
+    // exactly what tells UpdateVideoState that nothing can be echoing it. RecievedTime is
+    // stamped now only so logs read sensibly - the echo window it feeds is already
+    // neutralised by the null Author.
+    public void RestoreState(VideoStateDto restored)
+    {
+        lock (_stateLock)
+        {
+            restored.Author = null;
+            restored.RecievedTime = DateTimeOffset.UtcNow;
+            CurrentVideoState = restored;
+        }
+    }
+
     public bool UpdateVideoState(VideoStateDto newstate)
     {
         lock (_stateLock)
@@ -83,7 +104,16 @@ public class VideoStateProvider
 
             // A client reporting the state we just handed it is echoing, not acting.
             // Rebroadcasting that would bounce the same update between the clients.
+            //
+            // A state nobody sent - the initial one, or one restored from disk after a
+            // restart - has no Author, so by definition no client can be echoing it back:
+            // the first report after startup is always a real action. Without this guard
+            // the restored RecievedTime alone decides the outcome, and both choices are
+            // wrong. Keep it as the *last* thing that could match, i.e. fail open: a
+            // missed echo costs one redundant round-trip that settles by itself, while a
+            // false echo silently swallows a real action and leaves the two sides desynced.
             var isEcho =
+                current.Author is not null &&
                 current.Source == newstate.Source &&
                 current.IsPlaying == newstate.IsPlaying &&
                 current.Author != newstate.Author &&
