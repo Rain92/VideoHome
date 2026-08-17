@@ -177,6 +177,63 @@
     background: transparent;
 }
 
+/* Back-10s, floating over the frame. The native control bar is closed shadow DOM
+   and can't take extra buttons, so this sits on the video itself, shown whenever
+   the native controls are: on hover, or while the video is paused. */
+.player-skip-back {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    translate: 0 -50%;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgb(0 0 0 / 0.5);
+    color: #fff;
+    cursor: pointer;
+    /* Repeated taps are the expected gesture (10, 20, 30...); without this a
+       mobile browser holds each tap back ~300ms waiting for a double-tap zoom. */
+    touch-action: manipulation;
+    opacity: 0;
+    /* Hidden must mean gone: a transparent button parked over the video would
+       swallow the click-to-pause underneath it. */
+    pointer-events: none;
+    transition: opacity 180ms var(--ease), background 140ms var(--ease);
+}
+/* Icon and number share the one grid cell: the digits sit inside the ring. */
+.player-skip-back > * { grid-area: 1 / 1; }
+.player-skip-back i { font-size: 1.7rem; }
+.player-skip-back .player-skip-num {
+    font-size: 0.625rem;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.video-frame:hover .player-skip-back,
+.video-frame.is-paused .player-skip-back,
+.player-skip-back:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+.player-skip-back:hover { background: rgb(0 0 0 / 0.75); }
+.player-skip-back:active { scale: 0.94; }
+
+/* No hover to reveal it with - keep it on screen, a step quieter. */
+@media (hover: none) {
+    .player-skip-back {
+        width: 48px;
+        height: 48px;
+        opacity: 0.7;
+        pointer-events: auto;
+    }
+}
+
 .video-placeholder {
     position: absolute;
     inset: 0;

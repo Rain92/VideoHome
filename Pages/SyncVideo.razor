@@ -57,7 +57,11 @@
                    markup never changes, only the pixels. *@
                 <canvas class="video-ambient" width="32" height="18" aria-hidden="true"></canvas>
 
-                <div class="video-frame">
+                @* is-paused keeps the skip overlay visible while the native controls
+                   are. A class rather than :has(video:paused) because :paused is
+                   Safari-only - and as one invalid selector in a shared rule it would
+                   take the :hover reveal down with it in Chrome and Firefox. *@
+                <div class="video-frame @(videoState.Paused ? "is-paused" : null)">
                     <BlazoredVideo @ref="videoRef" controls playsinline
                                    webkit-playsinline="true"
                                    muted
@@ -78,6 +82,22 @@
                                    default="@(i == 0)"/>
                         }
                     </BlazoredVideo>
+
+                    @* On the video rather than in the native control bar, because the
+                       bar is closed shadow DOM: controlslist can only remove built-in
+                       items, nothing can be added. CSS reveals this whenever the native
+                       controls are showing - on hover, or while paused. *@
+                    @if (HasVideo)
+                    {
+                        <button type="button"
+                                class="player-skip-back"
+                                title="Back @(SKIP_BACK_SECONDS)s"
+                                aria-label="Skip back @(SKIP_BACK_SECONDS) seconds"
+                                @onclick="SkipBack">
+                            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                            <span class="player-skip-num">@SKIP_BACK_SECONDS</span>
+                        </button>
+                    }
 
                     @if (!HasVideo)
                     {
@@ -179,6 +199,10 @@
     // events that only arrive once the interop calls have returned.
     private const double ECHO_WINDOW_SECONDS = 0.7;
 
+    // How far the back button jumps. Kept as an int so the markup can print it into
+    // the label and the tooltip without formatting it first.
+    private const int SKIP_BACK_SECONDS = 10;
+
     private readonly Dictionary<VideoEvents, VideoStateOptions> options = new();
     private VideoState videoState = new();
 
@@ -229,6 +253,38 @@
             logger.LogWarning("Could not apply the ambient setting: {Error}", ex.Message);
             ambientEnabled = !ambientEnabled;
         }
+    }
+
+    // Jumps this client back and publishes where it landed, so everyone rewinds
+    // together - the point of the button is catching the line nobody heard.
+    private async Task SkipBack()
+    {
+        if (!HasVideo || !await WaitForVideoInteropAsync())
+            return;
+
+        try
+        {
+            // Read the position off the element rather than trusting videoState: that
+            // one only advances when the player raises TimeUpdate, so it can be a few
+            // hundred ms behind, and the jump would be off by that much.
+            var target = Math.Max(0, await videoRef.GetCurrentTimeAsync() - SKIP_BACK_SECONDS);
+
+            await videoRef.SetCurrentTimeAsync(target);
+
+            // The Seeking event that follows carries this too, but SendState below
+            // reads the cached state and would otherwise publish the old position.
+            videoState.CurrentTime = target;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Skipping back failed: {Error}", ex.Message);
+            return;
+        }
+
+        // Forced: a click is an explicit action, and it can land inside the echo window
+        // left by a state we just applied - the player's own Seeking event would then be
+        // held back and only this client would move.
+        await SendState(force: true);
     }
 
     private bool HasVideo => !string.IsNullOrEmpty(videoSource);
@@ -845,7 +901,15 @@
 
     private async Task HandleVideoEvent(VideoEventData videoData)
     {
+        var wasPaused = videoState.Paused;
         videoState = videoData.State;
+
+        // The paused flag feeds the .is-paused class on the frame. Events do not
+        // repaint on their own (StateHasChanged below stays commented out for good
+        // reason), so without this nudge the class only catches up on the next
+        // unrelated render. Only on a flip - TimeUpdate arrives constantly.
+        if (videoState.Paused != wasPaused)
+            await InvokeAsync(StateHasChanged);
 
         if (videoData.EventName == VideoEvents.LoadedMetadata)
         {
