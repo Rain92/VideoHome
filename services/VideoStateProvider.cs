@@ -22,8 +22,18 @@ public class VideoStateDto
     public DateTimeOffset RecievedTime { get; set; }
     public string? Author { get; set; }
 
+    // Sync plumbing, not content - exempt from the copy-in-GetStateDto rule above.
+    // Version is stamped by the server on every accepted update and only ever grows;
+    // BasedOnVersion is the last Version the sender had applied when it composed this
+    // update; ClientSequence orders one client's own sends among themselves. Together
+    // they let the server drop a report that was overtaken on the network instead of
+    // executing it and rewinding everyone.
+    public long Version { get; set; }
+    public long BasedOnVersion { get; set; }
+    public long ClientSequence { get; set; }
+
     public override string ToString() =>
-        $"Playing: {IsPlaying} {VideoTimestamp}s Recieved: {RecievedTime:mm:ss} by: {Author}";
+        $"Playing: {IsPlaying} {VideoTimestamp}s Recieved: {RecievedTime:mm:ss} by: {Author} v{Version}";
 }
 
 public record VideoHomeUser(string ConnectionId, string Username, int UserConnectionNum, int Latency)
@@ -83,6 +93,10 @@ public class VideoStateProvider
 
     public VideoStateDto CurrentVideoState { get; private set; } = new() { RecievedTime = DateTimeOffset.UtcNow};
 
+    // Grows by one per accepted update. Process-scoped on purpose: the clients whose
+    // BasedOnVersion values it is compared against die with the process too.
+    private long _version;
+
     // Seeds the state from disk at startup. Author stays null on purpose: the connection
     // that produced this state died with the previous process, and a null Author is
     // exactly what tells UpdateVideoState that nothing can be echoing it. RecievedTime is
@@ -94,6 +108,11 @@ public class VideoStateProvider
         {
             restored.Author = null;
             restored.RecievedTime = DateTimeOffset.UtcNow;
+
+            // Stamped like any accepted state, so version numbers stay monotonic within
+            // this process. The values that came off disk belonged to a dead process.
+            restored.Version = ++_version;
+            restored.ClientSequence = 0;
             CurrentVideoState = restored;
         }
     }
@@ -106,6 +125,24 @@ public class VideoStateProvider
             newstate.RecievedTime = now;
 
             var current = CurrentVideoState;
+
+            // Same client, lower sequence: an older report that overtook a newer one on
+            // the way here. The client's event handlers are fire-and-forget, so two of
+            // its sends can leave in either order; executing the older one would rewind
+            // everyone to a position its author has already left.
+            if (current.Author is not null &&
+                current.Author == newstate.Author &&
+                newstate.ClientSequence <= current.ClientSequence)
+                return false;
+
+            // Other client, composed before it had applied the state we currently hold:
+            // its report crossed our broadcast on the network. First to arrive wins -
+            // the hub pushes the winning state back to the loser, which converges
+            // instead of dragging everyone to a position based on stale information.
+            if (current.Author is not null &&
+                current.Author != newstate.Author &&
+                newstate.BasedOnVersion < current.Version)
+                return false;
 
             // A client reporting the state we just handed it is echoing, not acting.
             // Rebroadcasting that would bounce the same update between the clients.
@@ -128,6 +165,7 @@ public class VideoStateProvider
             if (isEcho)
                 return false;
 
+            newstate.Version = ++_version;
             CurrentVideoState = newstate;
             return true;
         }

@@ -98,6 +98,12 @@ namespace VideoHome.Server.Hubs
             else
             {
                 _logger.LogInformation($"Ignored state received by {_stateProvider.GetUser(Context.ConnectionId)}.");
+
+                // Rejected means the caller acted on - or echoed - information that is no
+                // longer current. Hand it the state that won so it converges; a client that
+                // has already applied this version skips it by the version check, so this
+                // costs nothing in the common echo case.
+                await Clients.Caller.SendAsync("ReceiveState", _stateProvider.CurrentVideoState);
             }
         }
     }

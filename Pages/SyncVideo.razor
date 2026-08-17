@@ -195,10 +195,6 @@
 
 
 @code {
-    // Tail window after we finished driving the player ourselves, to catch the
-    // events that only arrive once the interop calls have returned.
-    private const double ECHO_WINDOW_SECONDS = 0.7;
-
     // How far the back button jumps. Kept as an int so the markup can print it into
     // the label and the tooltip without formatting it first.
     private const int SKIP_BACK_SECONDS = 10;
@@ -209,7 +205,34 @@
     // > 0 while we drive the player (remote update or source switch). Anything it
     // raises in that window is our own doing, not the user's - never send it back.
     private int suppressSendDepth;
-    private DateTimeOffset suppressSendUntil = DateTimeOffset.MinValue;
+
+    // The events our own driving will still make the player raise after the handler
+    // has returned: Seeked after a seek, Playing once buffering allows, Pause after
+    // pausing. The fixed tail window this replaces was wrong in both directions - on
+    // a slow connection the player could still be buffering when it closed, and the
+    // stale events then leaked out as if the user had acted, which is what created
+    // the "have to pause/play to resync" drift after skipping around.
+    private readonly HashSet<VideoEvents> expectedSettleEvents = new();
+    private readonly object settleLock = new();
+    private DateTimeOffset settleDeadline = DateTimeOffset.MinValue;
+
+    // Safety valve: if a waited-for event never arrives (seek dropped, autoplay
+    // refused, broken source), suppression must not leave this client mute forever.
+    private const double SETTLE_TIMEOUT_SECONDS = 10;
+
+    // Scrubbing fires Seeking once per step, and publishing each one made the other
+    // side seek and rebuffer at every intermediate stop - falling further behind with
+    // each hop. Held briefly so only the position the user settles on is sent.
+    private const int SEEK_SEND_DEBOUNCE_MS = 300;
+    private CancellationTokenSource? seekSendDebounce;
+    private bool pendingSeekSend;
+
+    // Orders this client's own sends (the event handlers that produce them are
+    // fire-and-forget, so two sends can leave in either order) and records the last
+    // hub state we applied, so the server can drop reports that were overtaken on
+    // the network. See VideoStateDto.Version.
+    private long clientSequence;
+    private long lastAppliedVersion;
 
     // Completed by the LoadedMetadata video event. Reload/seek/play calls made right
     // after ReloadControl() race the browser actually fetching the new source; a fixed
@@ -269,6 +292,17 @@
             // hundred ms behind, and the jump would be off by that much.
             var target = Math.Max(0, await videoRef.GetCurrentTimeAsync() - SKIP_BACK_SECONDS);
 
+            // A scrub send still in its debounce window would republish the pre-jump
+            // position right after the forced send below.
+            CancelPendingSeekSend();
+
+            // The Seeking/Seeked (and Playing, once buffered) this seek raises are our
+            // own doing; the forced send below is what tells the other side.
+            var settle = new List<VideoEvents> { VideoEvents.Seeked };
+            if (!videoState.Paused)
+                settle.Add(VideoEvents.Playing);
+            BeginSettleSuppression(settle);
+
             await videoRef.SetCurrentTimeAsync(target);
 
             // The Seeking event that follows carries this too, but SendState below
@@ -281,9 +315,9 @@
             return;
         }
 
-        // Forced: a click is an explicit action, and it can land inside the echo window
-        // left by a state we just applied - the player's own Seeking event would then be
-        // held back and only this client would move.
+        // Forced: a click is an explicit action, and it can land while suppression from
+        // a state we just applied is still active - the player's own Seeking event would
+        // then be held back and only this client would move.
         await SendState(force: true);
     }
 
@@ -543,9 +577,21 @@
             // caller passes the real one.
             videoSourceTitle = title ?? videoSource?.Split('/').LastOrDefault() ?? "";
 
+            var elementWasPlaying = !videoState.Paused;
+
             // The cached state still describes the previous video. A fresh source
             // always starts at zero, so reset before anyone can read it.
             videoState = new VideoState { Paused = true, CurrentTime = 0 };
+
+            // A scrub send still in its debounce window belongs to the old video.
+            CancelPendingSeekSend();
+
+            // The pause and the seek-to-zero below come back as events well after this
+            // handler is done - they are ours, not the user's.
+            var settle = new List<VideoEvents> { VideoEvents.Seeked };
+            if (elementWasPlaying)
+                settle.Add(VideoEvents.Pause);
+            BeginSettleSuppression(settle);
 
             await videoRef.PausePlayback();
 
@@ -573,7 +619,6 @@
         finally
         {
             suppressSendDepth--;
-            suppressSendUntil = DateTimeOffset.UtcNow.AddSeconds(ECHO_WINDOW_SECONDS);
         }
 
         // Picking a video is an explicit action: it must reach the other side even
@@ -715,6 +760,9 @@
         {
             try
             {
+                // Whatever we knew is suspect after the gap: at zero, the state that
+                // RequestState answers with is applied unconditionally.
+                lastAppliedVersion = 0;
                 await connection.SendAsync("RegisterUser", username);
                 await connection.SendAsync("RequestState");
             }
@@ -775,7 +823,13 @@
             CaptionsLang = videoCaptions.Select(t => t.Item1).ToList(),
             CaptionsPath = videoCaptions.Select(t => t.Item2).ToList(),
             VideoTimestamp = videoState.CurrentTime,
-            Duration = videoState.Duration
+            Duration = videoState.Duration,
+
+            // Lets the server order our sends among themselves and detect a report
+            // composed before an in-flight broadcast reached us. Version stays 0 -
+            // that stamp is the server's alone.
+            ClientSequence = ++clientSequence,
+            BasedOnVersion = lastAppliedVersion
         };
     }
 
@@ -783,10 +837,27 @@
 
     private async Task StateRecieved(VideoStateDto newstate)
     {
+        // A version we have already applied, or been overtaken past. Duplicates are
+        // normal, not an error: the hub re-sends the current state whenever it rejects
+        // an update, and that usually names a version this client has long applied.
+        if (newstate.Version != 0 && newstate.Version <= lastAppliedVersion)
+        {
+            logger.LogInformation("Client: Ignoring state v{Version}, already at v{Applied}.",
+                newstate.Version, lastAppliedVersion);
+            return;
+        }
+
         // Not "give up if the player isn't ready": a freshly loaded page gets its state
         // pushed immediately, so bailing out here would drop the only update it receives.
         if (!await WaitForVideoInteropAsync())
             return;
+
+        if (newstate.Version != 0)
+            lastAppliedVersion = newstate.Version;
+
+        // Whatever local scrub was waiting to be published is stale now: this state
+        // supersedes it, and sending it later would fight the sender.
+        CancelPendingSeekSend();
 
         suppressSendDepth++;
         try
@@ -834,9 +905,25 @@
                 }
             }
 
+            var willSeek = Math.Abs(newstate.VideoTimestamp - videoState.CurrentTime) > 0.5;
+            var elementPaused = videoState.Paused;
+
+            // What the driving below will make the player raise, registered before the
+            // first call so an event that comes back mid-handler is consumed too. Only
+            // real transitions: play() on an already-playing element raises nothing, and
+            // waiting for an event that never comes would mute us until the timeout.
+            var settle = new List<VideoEvents>();
+            if (willSeek)
+                settle.Add(VideoEvents.Seeked);
+            if (newstate.IsPlaying && (willSeek || elementPaused))
+                settle.Add(VideoEvents.Playing);
+            if (!newstate.IsPlaying && !elementPaused)
+                settle.Add(VideoEvents.Pause);
+            BeginSettleSuppression(settle);
+
             // Seek before starting playback, not after: seeking post-play briefly
             // shows/plays frame 0 of the new source before jumping to the synced spot.
-            if (Math.Abs(newstate.VideoTimestamp - videoState.CurrentTime) > 0.5)
+            if (willSeek)
             {
                 logger.LogInformation("Client: Setting time to {Timestamp}.", newstate.VideoTimestamp);
                 await videoRef.SetCurrentTimeAsync(newstate.VideoTimestamp);
@@ -875,13 +962,105 @@
             // In a finally so a failed interop call cannot leave this client mute
             // for the rest of the session.
             suppressSendDepth--;
-            suppressSendUntil = DateTimeOffset.UtcNow.AddSeconds(ECHO_WINDOW_SECONDS);
+        }
+    }
+
+    // Registers the events the driving we are about to do will raise. Any previous
+    // expectation is cleared: the newest application of state is the one that counts.
+    private void BeginSettleSuppression(List<VideoEvents> events)
+    {
+        lock (settleLock)
+        {
+            expectedSettleEvents.Clear();
+            foreach (var e in events)
+                expectedSettleEvents.Add(e);
+            settleDeadline = DateTimeOffset.UtcNow.AddSeconds(SETTLE_TIMEOUT_SECONDS);
+        }
+    }
+
+    private bool SettleSuppressionActive()
+    {
+        lock (settleLock)
+        {
+            if (expectedSettleEvents.Count == 0)
+                return false;
+            if (DateTimeOffset.UtcNow < settleDeadline)
+                return true;
+
+            logger.LogWarning("Client: Still waiting on {Events} after {Timeout}s - releasing send suppression.",
+                string.Join(", ", expectedSettleEvents), SETTLE_TIMEOUT_SECONDS);
+            expectedSettleEvents.Clear();
+            return false;
+        }
+    }
+
+    private bool ConsumeExpectedSettleEvent(VideoEvents eventName)
+    {
+        lock (settleLock)
+        {
+            if (expectedSettleEvents.Count == 0)
+                return false;
+            if (DateTimeOffset.UtcNow >= settleDeadline)
+            {
+                expectedSettleEvents.Clear();
+                return false;
+            }
+
+            return expectedSettleEvents.Remove(eventName);
+        }
+    }
+
+    private void CancelPendingSeekSend()
+    {
+        pendingSeekSend = false;
+        seekSendDebounce?.Cancel();
+    }
+
+    private void ScheduleSeekSend()
+    {
+        // Dropped rather than delayed while suppression is active: a suppressed Seeking
+        // is the applied remote state moving our player, and a send merely postponed to
+        // after suppression lifts would still echo that seek back.
+        if (suppressSendDepth > 0 || SettleSuppressionActive())
+            return;
+
+        seekSendDebounce?.Cancel();
+        var cts = new CancellationTokenSource();
+        seekSendDebounce = cts;
+        pendingSeekSend = true;
+        _ = RunSeekSendAsync(cts.Token);
+    }
+
+    private async Task RunSeekSendAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(SEEK_SEND_DEBOUNCE_MS, token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        if (token.IsCancellationRequested)
+            return;
+
+        pendingSeekSend = false;
+        try
+        {
+            // SendState reads the cached state fresh, so this carries where the
+            // scrubbing ended up, not where it passed through when the timer started.
+            await SendState();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Sending state failed: {Error}", ex.Message);
         }
     }
 
     private async Task SendState(bool force = false)
     {
-        if (!force && (suppressSendDepth > 0 || DateTimeOffset.UtcNow < suppressSendUntil))
+        if (!force && (suppressSendDepth > 0 || SettleSuppressionActive()))
             return;
 
         var newstate = GetStateDto();
@@ -919,13 +1098,32 @@
                 waiter.TrySetResult(true);
         }
 
+        // The tail of something we drove ourselves (remote update, source switch, skip
+        // button): the event confirms the player has settled, it is not a user action.
+        if (ConsumeExpectedSettleEvent(videoData.EventName))
+        {
+            logger.LogInformation("Client: OnEvent: {Event} settles our own driving at {Position}.",
+                videoData.EventName, videoState.CurrentTime);
+            return;
+        }
+
         switch (videoData.EventName)
         {
+            case VideoEvents.Seeking:
+                logger.LogInformation($"Client: OnEvent: {videoData.EventName} {videoState.CurrentTime}");
+                ScheduleSeekSend();
+                break;
+
+            case VideoEvents.Playing when pendingSeekSend:
+                // Playback resuming mid-scrub; the debounced send already covers it.
+                break;
+
             case VideoEvents.Play:
             case VideoEvents.Playing:
             case VideoEvents.Pause:
-            case VideoEvents.Seeking:
-                @* case VideoEvents.Seeked: *@
+                // Carries the full, freshest state - anything the seek debounce was
+                // still holding back is superseded by this send.
+                CancelPendingSeekSend();
                 logger.LogInformation($"Client: OnEvent: {videoData.EventName} {videoState.CurrentTime}");
                 try
                 {
@@ -943,6 +1141,8 @@
     public async ValueTask DisposeAsync()
     {
         logger.LogInformation("Client: Disposing razor page.");
+
+        CancelPendingSeekSend();
 
         if (hubConnection is not null)
         {
