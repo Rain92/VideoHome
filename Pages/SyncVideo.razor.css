@@ -215,7 +215,10 @@
     font-variant-numeric: tabular-nums;
 }
 
-.video-frame:hover .player-skip-back,
+/* is-idle is playeridle.js reporting that the pointer has sat still long enough for
+   the native control bar to have hidden itself; the overlay goes at the same moment.
+   Paused is exempt, exactly as the native bar is. */
+.video-shell:not(.is-idle) .video-frame:hover .player-skip-back,
 .video-frame.is-paused .player-skip-back,
 .player-skip-back:focus-visible {
     opacity: 1;
@@ -232,6 +235,28 @@
         opacity: 0.7;
         pointer-events: auto;
     }
+}
+
+/* Shown while the player is holding at a sync point waiting for the other side to
+   buffer. Top centre, clear of the skip button on the left and of the native control
+   bar along the bottom. pointer-events: none so it can never swallow a click meant
+   for the video. */
+.sync-wait {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    translate: -50% 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.65);
+    color: #fff;
+    font-size: 0.8rem;
+    line-height: 1;
+    pointer-events: none;
 }
 
 .video-placeholder {

@@ -41,6 +41,15 @@ namespace VideoHome.Server.Hubs
 
             _logger.LogInformation($"User disconnected:  {user}. Number of users is {_stateProvider.NumConnectedClients}");
 
+            // Closing the tab while everyone waits for that tab to buffer would leave
+            // the rest paused until their fallback timers fired.
+            var release = _stateProvider.ClientLeftBarrier(Context.ConnectionId);
+            if (release is not null)
+            {
+                _logger.LogInformation($"Releasing v{release} - the client it was waiting on left.");
+                await Clients.All.SendAsync("SyncRelease", release.Value);
+            }
+
             // Nobody left to report a pause, so whatever was playing has effectively
             // stopped. Without this, watching a film to the end and just closing the tab
             // would leave no trace in the history at all.
@@ -59,6 +68,42 @@ namespace VideoHome.Server.Hubs
 
             // Not just the caller: the clients already watching have to see the newcomer.
             await Clients.All.SendAsync("ConnectedUsersChanged", _stateProvider.ListConnectedUsers());
+        }
+
+        // A client saying it has buffered at the current sync point and could start
+        // playing. Everyone resumes on the release that follows the last of these, so
+        // the wait costs each client the same instead of only the slow one falling behind.
+        public async Task ReportReady(long version)
+        {
+            var outcome = _stateProvider.MarkClientReady(Context.ConnectionId, version);
+            _logger.LogInformation(
+                $"{_stateProvider.GetUser(Context.ConnectionId)} is ready at v{version}: {outcome}.");
+
+            switch (outcome)
+            {
+                case ReadyReport.ReleaseAll:
+                    await Clients.All.SendAsync("SyncRelease", version);
+                    break;
+
+                // Joined or finished buffering after the others had already resumed.
+                // Releasing just this one puts it back in step without disturbing them.
+                case ReadyReport.AlreadyReleased:
+                    await Clients.Caller.SendAsync("SyncRelease", version);
+                    break;
+            }
+        }
+
+        // A client that has waited as long as it is willing to. Releasing everyone from
+        // here, rather than letting it start on its own, keeps them together even when
+        // one of them never answered.
+        public async Task ForceRelease(long version)
+        {
+            if (!_stateProvider.ForceReleaseBarrier(version))
+                return;
+
+            _logger.LogWarning(
+                $"{_stateProvider.GetUser(Context.ConnectionId)} gave up waiting at v{version}; releasing everyone.");
+            await Clients.All.SendAsync("SyncRelease", version);
         }
 
         public async Task Pong(int n, DateTimeOffset initialtime)
@@ -94,6 +139,13 @@ namespace VideoHome.Server.Hubs
 
                 _logger.LogInformation($"State received by {_stateProvider.GetUser(Context.ConnectionId)}. Updating other clients.");
                 await Clients.Others.SendAsync("ReceiveState", _stateProvider.CurrentVideoState);
+
+                // The sender needs the version its own update became, and whether that
+                // version is one it has to hold at - it does not receive its own state
+                // back. Sent after the others, so nobody is released before every client
+                // has been asked to hold.
+                await Clients.Caller.SendAsync(
+                    "StateAccepted", newstate.Version, newstate.RequiresSync, newstate.VideoTimestamp);
             }
             else
             {
