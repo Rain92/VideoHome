@@ -62,16 +62,9 @@
                    Safari-only - and as one invalid selector in a shared rule it would
                    take the :hover reveal down with it in Chrome and Firefox. *@
                 <div class="video-frame @(videoState.Paused ? "is-paused" : null)">
-                    @* preload=auto because the sync barrier depends on it: a client holds
-                       *paused* at the agreed position while it buffers, and under the
-                       default the browser is free to fetch little more than metadata
-                       until something plays - so the hold would expire having buffered
-                       nothing and start behind after all. dash.js fills its own buffer
-                       regardless, but a plain file is the browser's decision. *@
                     <BlazoredVideo @ref="videoRef" controls playsinline
                                    webkit-playsinline="true"
                                    muted
-                                   Preload="PreloadTypes.Auto"
                                    EventFired="OnEvent"
                                    VideoEventOptions="options">
                         @* Omitted for a DASH manifest: dash.js owns the element's src there,
@@ -104,16 +97,6 @@
                             <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
                             <span class="player-skip-num">@SKIP_BACK_SECONDS</span>
                         </button>
-                    }
-
-                    @* The hold is usually too short to notice, but on a slow connection
-                       it needs to look like waiting rather than like the player breaking. *@
-                    @if (IsHoldingForSync)
-                    {
-                        <div class="sync-wait" role="status">
-                            <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>
-                            <span>Waiting for everyone to buffer…</span>
-                        </div>
                     }
 
                     @if (!HasVideo)
@@ -250,44 +233,6 @@
     // the network. See VideoStateDto.Version.
     private long clientSequence;
     private long lastAppliedVersion;
-
-    // The sync barrier, client half. When a state resumes playback somewhere the clients
-    // may not have buffered - the server decides that and marks it RequiresSync - this
-    // client holds the playhead at the agreed position, waits for the browser to buffer,
-    // and reports in; the hub releases everyone once the last of them has answered.
-    // Skipping the hold is what used to let whoever did the seeking - already holding
-    // the media it seeked into - run ahead of a client that still had to fetch it, by
-    // however long that fetch took.
-    //
-    // A plain resume from a spot nobody moved away from never holds: both sides have
-    // the media, so the only thing a hold could add there is a stutter.
-    private long? holdingForVersion;
-    private CancellationTokenSource? holdCts;
-
-    // Guards against the pathological cases: a release that arrives before we even
-    // start holding (we were not yet in the hub's client list when it went out), and
-    // one that never arrives at all.
-    private long lastReleasedVersion;
-
-    private bool IsHoldingForSync => holdingForVersion is not null;
-
-    // How long a client may buffer before it reports in regardless. Playing unbuffered
-    // is no worse than the old behaviour, whereas holding everyone indefinitely is.
-    private const int READY_TIMEOUT_MS = 4000;
-
-    // Backstop for a release that never comes - a dropped message, or a client that
-    // stopped answering without disconnecting. Every client reports within
-    // READY_TIMEOUT_MS of its own hold starting, and the holds start within a round
-    // trip of each other, so anything past this is a fault rather than slow buffering.
-    private const double RELEASE_FALLBACK_SECONDS = 4;
-
-    // And if even the forced release goes unanswered, the hub is not going to reply.
-    private const double FORCED_RELEASE_GRACE_SECONDS = 2;
-
-    // PausePlayback on an already-paused element raises no Pause event, so registering
-    // an expectation for one would keep this client mute until the settle deadline.
-    // Tracked separately because videoState.Paused only catches up when the event lands.
-    private bool pauseIssued;
 
     // Completed by the LoadedMetadata video event. Reload/seek/play calls made right
     // after ReloadControl() race the browser actually fetching the new source; a fixed
@@ -638,10 +583,8 @@
             // always starts at zero, so reset before anyone can read it.
             videoState = new VideoState { Paused = true, CurrentTime = 0 };
 
-            // A scrub send still in its debounce window belongs to the old video, and a
-            // hold on the old video's sync point must not report this one as playing.
+            // A scrub send still in its debounce window belongs to the old video.
             CancelPendingSeekSend();
-            CancelSyncHold();
 
             // The pause and the seek-to-zero below come back as events well after this
             // handler is done - they are ours, not the user's.
@@ -809,28 +752,6 @@
 
         connection.On<VideoStateDto>("ReceiveState", StateRecieved);
 
-        // Our own accepted update: we never receive it back as state, but its version is
-        // the sync point we now have to hold at too.
-        connection.On<long, bool, double>("StateAccepted", async (version, requiresSync, timestamp) =>
-        {
-            lastAppliedVersion = Math.Max(lastAppliedVersion, version);
-
-            if (requiresSync)
-            {
-                await StartSyncHoldAsync(version, timestamp);
-            }
-            else
-            {
-                // Nothing to coordinate. Our player is already doing what we published -
-                // we are the ones who did it - so there is nothing to apply either.
-                CancelSyncHold();
-                await InvokeAsync(StateHasChanged);
-            }
-        });
-
-        // Everyone has buffered at that sync point - resume together.
-        connection.On<long>("SyncRelease", ReleaseSyncHoldAsync);
-
         connection.On<List<UserConnectionCount>>("ConnectedUsersChanged", RefreshConnectedUsers);
 
         // A reconnect gets a fresh ConnectionId, so as far as the server is concerned
@@ -896,10 +817,7 @@
     {
         return new VideoStateDto
         {
-            // While holding for a sync point the element is paused, but the shared
-            // intent is to play - reporting the element's state would tell the others
-            // we had paused and stop the very playback the hold is preparing.
-            IsPlaying = IsHoldingForSync || !videoState.Paused,
+            IsPlaying = !videoState.Paused,
             Source = videoSource,
             Title = videoSourceTitle,
             CaptionsLang = videoCaptions.Select(t => t.Item1).ToList(),
@@ -958,9 +876,6 @@
                 // Cached state belongs to the previous video - a new source is at zero.
                 videoState = new VideoState { Paused = true, CurrentTime = 0 };
 
-                // A fresh source loads paused, whatever we had asked of the old one.
-                pauseIssued = false;
-
                 if (!string.IsNullOrEmpty(videoSource))
                 {
                     // SetSrcAsync talks to the browser element directly instead of
@@ -991,6 +906,7 @@
             }
 
             var willSeek = Math.Abs(newstate.VideoTimestamp - videoState.CurrentTime) > 0.5;
+            var elementPaused = videoState.Paused;
 
             // What the driving below will make the player raise, registered before the
             // first call so an event that comes back mid-handler is consumed too. Only
@@ -999,6 +915,10 @@
             var settle = new List<VideoEvents>();
             if (willSeek)
                 settle.Add(VideoEvents.Seeked);
+            if (newstate.IsPlaying && (willSeek || elementPaused))
+                settle.Add(VideoEvents.Playing);
+            if (!newstate.IsPlaying && !elementPaused)
+                settle.Add(VideoEvents.Pause);
             BeginSettleSuppression(settle);
 
             // Seek before starting playback, not after: seeking post-play briefly
@@ -1010,25 +930,22 @@
                 videoState.CurrentTime = newstate.VideoTimestamp;
             }
 
-            if (newstate.IsPlaying && newstate.RequiresSync)
+            try
             {
-                // Resuming somewhere we may not have buffered: hold here until every
-                // client reports it has, then the hub starts us all together.
-                await StartSyncHoldAsync(newstate.Version, newstate.VideoTimestamp);
+                if (newstate.IsPlaying)
+                {
+                    logger.LogInformation("Client: Starting playback.");
+                    await videoRef.StartPlayback();
+                }
+                else
+                {
+                    logger.LogInformation("Client: Pausing playback.");
+                    await videoRef.PausePlayback();
+                }
             }
-            else if (newstate.IsPlaying)
+            catch (Exception ex)
             {
-                // Playing on from a spot nobody moved away from. Both sides already hold
-                // the media, so start now - waiting would only add a stutter, and the
-                // player is where the sender's was when they pressed play.
-                CancelSyncHold();
-                await StartPlaybackForSyncAsync();
-            }
-            else
-            {
-                logger.LogInformation("Client: Pausing playback.");
-                CancelSyncHold();
-                await PauseForSyncAsync();
+                logger.LogWarning("Autoplay failed: {Error}", ex.Message);
             }
 
             await InvokeAsync(StateHasChanged);
@@ -1055,20 +972,6 @@
         lock (settleLock)
         {
             expectedSettleEvents.Clear();
-            foreach (var e in events)
-                expectedSettleEvents.Add(e);
-            settleDeadline = DateTimeOffset.UtcNow.AddSeconds(SETTLE_TIMEOUT_SECONDS);
-        }
-    }
-
-    // Extends the current expectation instead of replacing it: the barrier registers
-    // its pause and, later, its resume while a seek from the same operation may still
-    // be settling, and clearing that would let the seek's own events out as if the
-    // user had made them.
-    private void AddSettleExpectations(params VideoEvents[] events)
-    {
-        lock (settleLock)
-        {
             foreach (var e in events)
                 expectedSettleEvents.Add(e);
             settleDeadline = DateTimeOffset.UtcNow.AddSeconds(SETTLE_TIMEOUT_SECONDS);
@@ -1155,247 +1058,6 @@
         }
     }
 
-    // Pausing without leaving a dangling expectation behind if the element was already
-    // paused. Every pause the sync layer performs goes through here.
-    private async Task PauseForSyncAsync()
-    {
-        if (videoState.Paused || pauseIssued)
-            return;
-
-        pauseIssued = true;
-        AddSettleExpectations(VideoEvents.Pause);
-        try
-        {
-            await videoRef.PausePlayback();
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning("Pausing failed: {Error}", ex.Message);
-
-            // The event is never coming, so give the expectation back rather than
-            // staying mute until the deadline.
-            pauseIssued = false;
-            ConsumeExpectedSettleEvent(VideoEvents.Pause);
-        }
-    }
-
-    // How far the playhead may sit from the agreed sync point before it is worth a
-    // seek. Below this a correction costs more than it buys: a seek can drop the
-    // buffer dash.js has built up and turn a fraction of a second into a real stall.
-    private const double SYNC_POINT_TOLERANCE_SECONDS = 0.25;
-
-    private async Task AlignToSyncPointAsync(double position)
-    {
-        if (double.IsNaN(position) || position < 0)
-            return;
-
-        var expectationAdded = false;
-        try
-        {
-            // Read from the element: videoState.CurrentTime only moves when TimeUpdate
-            // arrives, which is exactly the lag being corrected for here.
-            var actual = await videoRef.GetCurrentTimeAsync();
-            if (Math.Abs(actual - position) <= SYNC_POINT_TOLERANCE_SECONDS)
-                return;
-
-            logger.LogInformation("Client: Aligning {Actual}s onto the sync point at {Position}s.", actual, position);
-
-            AddSettleExpectations(VideoEvents.Seeked);
-            expectationAdded = true;
-
-            await videoRef.SetCurrentTimeAsync(position);
-            videoState.CurrentTime = position;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning("Client: could not align onto the sync point: {Error}", ex.Message);
-
-            // No seek happened, so nothing will settle that expectation.
-            if (expectationAdded)
-                ConsumeExpectedSettleEvent(VideoEvents.Seeked);
-        }
-    }
-
-    // Holds the playhead at an agreed position until every client has buffered there.
-    // Entered from both directions - a state we received, and one of ours the hub
-    // accepted - because the client that acted has to wait for the others just as much.
-    private async Task StartSyncHoldAsync(long version, double position)
-    {
-        // A state from before versioning, or one the hub never stamped: nothing can
-        // release a hold on it, so keep the old behaviour and just play.
-        if (version <= 0)
-        {
-            await StartPlaybackForSyncAsync();
-            return;
-        }
-
-        // The release went out before we were holding - or before the hub counted us at
-        // all. Waiting for a second one would mean sitting still for the fallback.
-        if (lastReleasedVersion >= version)
-        {
-            logger.LogInformation("Client: v{Version} was already released; playing without holding.", version);
-            await StartPlaybackForSyncAsync();
-            return;
-        }
-
-        var isNewHold = holdingForVersion != version;
-        holdingForVersion = version;
-
-        holdCts?.Cancel();
-        var cts = new CancellationTokenSource();
-        holdCts = cts;
-
-        // Hold where everyone agreed the playhead is. Doing this on the client that
-        // seeked as well is the entire point: the wait then costs both sides the same.
-        await PauseForSyncAsync();
-
-        // Only now that nothing is advancing any more, put the playhead exactly on the
-        // sync point. The client that acted has usually played on a little since it
-        // published that position - the scrub debounce and the round trip both cost
-        // real time - and resuming from where it drifted to would hand back a slice of
-        // the very offset this is here to remove.
-        await AlignToSyncPointAsync(position);
-
-        if (isNewHold)
-            await InvokeAsync(StateHasChanged);
-
-        // Detached: the buffer wait takes as long as the network takes, and this runs on
-        // the hub connection's dispatch loop - blocking it would keep the very release
-        // this is waiting for from ever being delivered.
-        _ = RunSyncHoldAsync(version, cts.Token);
-    }
-
-    private async Task RunSyncHoldAsync(long version, CancellationToken token)
-    {
-        try
-        {
-            bool ready;
-            try
-            {
-                // The feedback signal: resolves once the browser has media at the
-                // playhead and enough after it to keep going.
-                ready = await JS.InvokeAsync<bool>("videoHome.waitUntilReady", token, READY_TIMEOUT_MS);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                // Report in anyway below: a client that cannot answer must not be able
-                // to keep everyone else paused.
-                logger.LogWarning("Client: could not wait for the buffer: {Error}", ex.Message);
-                ready = false;
-            }
-
-            if (token.IsCancellationRequested)
-                return;
-
-            if (!ready)
-            {
-                logger.LogWarning(
-                    "Client: still not buffered at {Position}s after {Timeout}ms - reporting ready anyway.",
-                    videoState.CurrentTime, READY_TIMEOUT_MS);
-            }
-
-            if (hubConnection is not null)
-                await hubConnection.SendAsync("ReportReady", version, cancellationToken: token);
-
-            await Task.Delay(TimeSpan.FromSeconds(RELEASE_FALLBACK_SECONDS), token);
-
-            if (holdingForVersion != version)
-                return;
-
-            // Long enough. Ask the hub to let everyone go at once rather than starting
-            // on our own: whatever went wrong, the two sides resuming at whichever
-            // moment each happened to give up is worse than both resuming late.
-            logger.LogWarning("Client: no release for v{Version} arrived - asking for one.", version);
-            if (hubConnection is not null)
-                await hubConnection.SendAsync("ForceRelease", version, cancellationToken: token);
-
-            await Task.Delay(TimeSpan.FromSeconds(FORCED_RELEASE_GRACE_SECONDS), token);
-
-            // Not even that came back, so the hub is not going to answer. Play rather
-            // than leave the player parked indefinitely.
-            if (holdingForVersion == version)
-            {
-                logger.LogWarning("Client: v{Version} was never released - resuming on our own.", version);
-                await ReleaseSyncHoldAsync(version);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Superseded by a newer sync point, or the page is going away.
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning("Client: the sync hold for v{Version} failed: {Error}", version, ex.Message);
-
-            // Never leave the player parked because the bookkeeping broke.
-            await ReleaseSyncHoldAsync(version);
-        }
-    }
-
-    private async Task ReleaseSyncHoldAsync(long version)
-    {
-        lastReleasedVersion = Math.Max(lastReleasedVersion, version);
-
-        if (holdingForVersion != version)
-        {
-            // A release for a sync point we have already left. Normal: the hub sends it
-            // to everyone, and by then someone may have seeked again.
-            logger.LogInformation("Client: ignoring the release for v{Version}, holding at {Held}.",
-                version, holdingForVersion?.ToString() ?? "nothing");
-            return;
-        }
-
-        holdingForVersion = null;
-        holdCts?.Cancel();
-
-        await StartPlaybackForSyncAsync();
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private async Task StartPlaybackForSyncAsync()
-    {
-        // The shared state already says playing, so these events carry nothing new -
-        // and sending on them would ask the hub for another sync point on top of the
-        // one we are finishing, over and over.
-        //
-        // Only when there is a transition to expect, though: play() on an element that
-        // is already playing raises nothing, and an expectation nothing will settle
-        // keeps this client mute until the deadline.
-        var expectingPlayback = videoState.Paused || pauseIssued;
-        if (expectingPlayback)
-            AddSettleExpectations(VideoEvents.Play, VideoEvents.Playing);
-
-        pauseIssued = false;
-
-        try
-        {
-            logger.LogInformation("Client: Starting playback.");
-            await videoRef.StartPlayback();
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning("Autoplay failed: {Error}", ex.Message);
-
-            // Nothing will settle those two now. Given back individually rather than
-            // clearing the set, which may also be holding a seek from the same operation.
-            if (expectingPlayback)
-            {
-                ConsumeExpectedSettleEvent(VideoEvents.Play);
-                ConsumeExpectedSettleEvent(VideoEvents.Playing);
-            }
-        }
-    }
-
-    private void CancelSyncHold()
-    {
-        holdingForVersion = null;
-        holdCts?.Cancel();
-    }
-
     private async Task SendState(bool force = false)
     {
         if (!force && (suppressSendDepth > 0 || SettleSuppressionActive()))
@@ -1427,11 +1089,6 @@
         // unrelated render. Only on a flip - TimeUpdate arrives constantly.
         if (videoState.Paused != wasPaused)
             await InvokeAsync(StateHasChanged);
-
-        // The element has now told us where it stands, so a pause we asked for is
-        // either done or moot.
-        if (videoData.EventName is VideoEvents.Pause or VideoEvents.Play or VideoEvents.Playing)
-            pauseIssued = false;
 
         if (videoData.EventName == VideoEvents.LoadedMetadata)
         {
@@ -1486,7 +1143,6 @@
         logger.LogInformation("Client: Disposing razor page.");
 
         CancelPendingSeekSend();
-        CancelSyncHold();
 
         if (hubConnection is not null)
         {

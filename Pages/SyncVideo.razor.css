@@ -237,28 +237,6 @@
     }
 }
 
-/* Shown while the player is holding at a sync point waiting for the other side to
-   buffer. Top centre, clear of the skip button on the left and of the native control
-   bar along the bottom. pointer-events: none so it can never swallow a click meant
-   for the video. */
-.sync-wait {
-    position: absolute;
-    top: 1rem;
-    left: 50%;
-    translate: -50% 0;
-    z-index: 3;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.85rem;
-    border-radius: 999px;
-    background: rgb(0 0 0 / 0.65);
-    color: #fff;
-    font-size: 0.8rem;
-    line-height: 1;
-    pointer-events: none;
-}
-
 .video-placeholder {
     position: absolute;
     inset: 0;
