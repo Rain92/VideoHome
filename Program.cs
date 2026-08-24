@@ -71,6 +71,7 @@ services.AddSingleton<VideoStateProvider>();
 services.AddHttpClient();
 services.AddSingleton<YoutubeStreamService>();
 services.AddSingleton<WatchHistoryService>();
+services.AddSingleton<MoodService>();
 services.AddHostedService<VideoStatePersistenceService>();
 
 #endregion
@@ -80,6 +81,9 @@ var app = builder.Build();
 // Resolved eagerly so the history file is read - and any problem with it logged - at
 // startup, rather than by whoever happens to open the page first.
 var watchHistory = app.Services.GetRequiredService<WatchHistoryService>();
+
+// Same reasoning as above: the mood file's problems belong in the startup log.
+_ = app.Services.GetRequiredService<MoodService>();
 
 // A stop while a film is running would otherwise lose that stretch of watching: the
 // clients never get the chance to report the pause that would have recorded it.

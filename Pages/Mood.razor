@@ -1,0 +1,339 @@
+@page "/mood"
+@attribute [Authorize]
+@using System.Globalization
+@using VideoHome.Services
+@inject MoodService Moods
+@inject AuthenticationStateProvider Authentication
+
+<PageTitle>VideoHome · Mood</PageTitle>
+
+<div class="mood-layout">
+
+    <header class="mood-head">
+        <h1 class="mood-title">Mood</h1>
+        <p class="mood-lede">
+            Everyone rates a day once, and only once — the day keeps the worst verdict it
+            collected. Today and the three days before it are still open.
+        </p>
+    </header>
+
+    @* The streak is the headline number, the counts support it - same hero-plus-tiles
+       arrangement as the history page. *@
+    <section class="mood-figures">
+        <div class="card-panel figure figure-hero">
+            <p class="figure-label">Happy streak</p>
+            <p class="figure-hero-value">
+                <span class="figure-flame" aria-hidden="true">🔥</span>@streakDays
+            </p>
+            <p class="figure-sub">@StreakHint()</p>
+        </div>
+        <div class="card-panel figure">
+            <p class="figure-label">Days rated</p>
+            <p class="figure-value">@dayWorst.Count</p>
+        </div>
+        <div class="card-panel figure">
+            <p class="figure-label">Reviews cast</p>
+            <p class="figure-value">@reviews.Count</p>
+        </div>
+    </section>
+
+    @* The reviewable days, newest first. Once this user has reviewed one it locks into
+       their choice - there is no path back from here, by design. *@
+    <section class="card-panel mood-open">
+        <header class="mood-section-head">
+            <h2 class="mood-section-title">How was the day?</h2>
+            <span class="mood-section-meta">one shot each — no takebacks</span>
+        </header>
+
+        <div class="mood-open-days">
+            @foreach (var day in reviewableDays)
+            {
+                var hasMood = dayWorst.TryGetValue(day, out var worst);
+                var mine = myReviews.Contains(day);
+
+                <div class="mood-open-day @(mine ? "is-mine" : null)" @key="day">
+                    <p class="mood-open-name">@OpenDayLabel(day)</p>
+
+                    @if (hasMood)
+                    {
+                        <p class="mood-open-worst" title="@CellTitle(day)">
+                            <span class="mood-emoji">@Emoji(worst)</span>
+                            <span>so far: @Word(worst)</span>
+                        </p>
+                    }
+
+                    @if (mine)
+                    {
+                        <p class="mood-open-locked" title="Locked in — reviews cannot be changed.">
+                            <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                            you rated it @Emoji(myOwn[day])
+                        </p>
+                    }
+                    else
+                    {
+                        <div class="mood-open-choices" role="group" aria-label="@OpenDayLabel(day)">
+                            @foreach (var choice in allMoods)
+                            {
+                                var mood = choice;
+                                <button class="mood-pick" @onclick="() => Submit(day, mood)"
+                                        title="Rate @Word(mood) @Emoji(mood)">
+                                    <span class="mood-emoji">@Emoji(mood)</span>
+                                    <span class="mood-pick-word">@Word(mood)</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    @if (reviews.Count > 0)
+    {
+        <section class="card-panel">
+            <header class="mood-section-head">
+                <h2 class="mood-section-title">All-time</h2>
+                <span class="mood-section-meta">of days rated, at their worst</span>
+            </header>
+
+            <ul class="mood-stats">
+                @foreach (var mood in allMoods)
+                {
+                    var share = dayWorst.Count == 0 ? 0 : moodCounts[mood] * 100.0 / dayWorst.Count;
+
+                    <li class="mood-stat" @key="mood">
+                        <span class="mood-emoji">@Emoji(mood)</span>
+                        <span class="mood-stat-name">@Word(mood)</span>
+                        <span class="mood-stat-bar" title="@moodCounts[mood] of @dayWorst.Count">
+                            <span class="@FillClass(mood)"
+                                  style="width: @Pct(share);"></span>
+                        </span>
+                        <span class="mood-stat-count">@moodCounts[mood]</span>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+
+    <section class="card-panel mood-calendar">
+        <header class="mood-section-head">
+            <h2 class="mood-section-title">@MonthLabel(monthShown)</h2>
+            <nav class="mood-month-nav" aria-label="Month">
+                <button class="mood-month-btn" @onclick="PreviousMonth" aria-label="Previous month">
+                    <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                </button>
+                <button class="mood-month-btn" @onclick="NextMonth" disabled="@(!canGoForward)"
+                        aria-label="Next month">
+                    <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                </button>
+            </nav>
+        </header>
+
+        <div class="mood-weekdays">
+            @foreach (var name in weekdayNames)
+            {
+                <span class="mood-weekday" @key="name">@name</span>
+            }
+        </div>
+
+        <div class="mood-grid">
+            @foreach (var day in CalendarCells())
+            {
+                var inMonth = day.Month == monthShown.Month;
+                var hasMood = dayWorst.TryGetValue(day, out var worst);
+
+                <div class="mood-cell @(inMonth ? null : "is-out") @(day == today ? "is-today" : null)"
+                     @key="day"
+                     title="@CellTitle(day)">
+                    <span class="mood-cell-day">@day.Day</span>
+                    @if (hasMood)
+                    {
+                        <span class="mood-emoji">@Emoji(worst)</span>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private static readonly MoodRating[] allMoods = [MoodRating.Happy, MoodRating.Soso, MoodRating.Shit];
+    private static readonly string[] weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    private string username = "";
+    private DateOnly today;
+
+    private List<MoodReview> reviews = new();
+
+    // Each rated day collapsed to its worst verdict - the one thing every view here
+    // needs.
+    private Dictionary<DateOnly, MoodRating> dayWorst = new();
+
+    // Days this user has spent their one review on, plus what they chose.
+    private HashSet<DateOnly> myReviews = new();
+    private Dictionary<DateOnly, MoodRating> myOwn = new();
+
+    private List<DateOnly> reviewableDays = new();
+    private Dictionary<MoodRating, int> moodCounts = new();
+
+    private DateOnly monthShown;
+    private bool canGoForward =>
+        monthShown.Year * 12 + monthShown.Month < today.Year * 12 + today.Month;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await Authentication.GetAuthenticationStateAsync();
+        username = auth.User.Identity?.Name ?? "";
+
+        // Server-local date, matching how WatchHistoryService cuts its days.
+        today = DateOnly.FromDateTime(DateTime.Now);
+        monthShown = new DateOnly(today.Year, today.Month, 1);
+
+        Load();
+    }
+
+    private void Load()
+    {
+        reviews = Moods.Snapshot();
+
+        dayWorst = reviews
+            .GroupBy(r => r.Day)
+            .ToDictionary(
+                g => g.Key,
+                g => (MoodRating)g.Max(r => (int)r.Rating));
+
+        myReviews = reviews
+            .Where(r => string.Equals(r.User, username, StringComparison.OrdinalIgnoreCase))
+            .Select(r => r.Day)
+            .ToHashSet();
+        myOwn = reviews
+            .Where(r => string.Equals(r.User, username, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(r => r.Day)
+            .ToDictionary(g => g.Key, g => g.First().Rating);
+
+        // Newest first: today is the day most people came here to rate.
+        reviewableDays = Enumerable.Range(0, MoodService.ReviewWindowDays + 1)
+            .Select(i => today.AddDays(-i))
+            .ToList();
+
+        moodCounts = allMoods.ToDictionary(m => m, _ => 0);
+        foreach (var mood in dayWorst.Values)
+            moodCounts[mood]++;
+
+        ComputeStreak();
+    }
+
+    private int streakDays;
+    private bool streakEndedToday;
+
+    // Consecutive happy days counting back from today. A today without any review yet
+    // does not break the streak - the day simply is not over - but an unreviewed older
+    // day does: nobody called it happy, so it cannot count as one.
+    private void ComputeStreak()
+    {
+        streakDays = 0;
+        streakEndedToday = false;
+
+        var cursor = today;
+        if (!dayWorst.ContainsKey(today))
+            cursor = today.AddDays(-1);
+        else
+            streakEndedToday = true;
+
+        while (dayWorst.TryGetValue(cursor, out var mood) && mood == MoodRating.Happy)
+        {
+            streakDays++;
+            cursor = cursor.AddDays(-1);
+        }
+    }
+
+    private string StreakHint() => streakDays switch
+    {
+        0 when !streakEndedToday => "no happy days in a row yet",
+        0 => $"the last rating was {Word(dayWorst[today])} — the streak starts again tomorrow",
+        _ when !streakEndedToday => $"{streakDays} {(streakDays == 1 ? "day" : "days")} in a row — rate today to keep it going",
+        _ => $"{streakDays} happy {(streakDays == 1 ? "day" : "days")} in a row, today included",
+    };
+
+    private void Submit(DateOnly day, MoodRating rating)
+    {
+        // A false return means the server already had a review from this user for the
+        // day - reloading shows the locked state either way.
+        Moods.TryAddReview(day, username, rating);
+        Load();
+    }
+
+    private void PreviousMonth() => monthShown = monthShown.AddMonths(-1);
+
+    private void NextMonth()
+    {
+        if (canGoForward)
+            monthShown = monthShown.AddMonths(1);
+    }
+
+    // Monday-first grid covering exactly the weeks the month touches. Six rows would
+    // pad most months with dead cells; this grows and shrinks with the month instead.
+    private IEnumerable<DateOnly> CalendarCells()
+    {
+        var first = new DateOnly(monthShown.Year, monthShown.Month, 1);
+        var lead = ((int)first.DayOfWeek + 6) % 7; // days since Monday
+
+        var start = first.AddDays(-lead);
+        var count = lead + DateTime.DaysInMonth(monthShown.Year, monthShown.Month);
+        count = (count + 6) / 7 * 7;
+
+        for (var i = 0; i < count; i++)
+            yield return start.AddDays(i);
+    }
+
+    private string OpenDayLabel(DateOnly day) => day switch
+    {
+        var d when d == today => "Today",
+        var d when d == today.AddDays(-1) => "Yesterday",
+        _ => day.ToString("dddd", CultureInfo.InvariantCulture),
+    };
+
+    private static string MonthLabel(DateOnly month) =>
+        month.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
+
+    private static string Emoji(MoodRating mood) => mood switch
+    {
+        MoodRating.Happy => "😄",
+        MoodRating.Soso => "😐",
+        _ => "💩",
+    };
+
+    private static string Word(MoodRating mood) => mood switch
+    {
+        MoodRating.Happy => "happy",
+        MoodRating.Soso => "so-so",
+        _ => "cục cứt",
+    };
+
+    // Kept apart from Word(): display text may hold spaces and diacritics, a class
+    // name may not - deriving one from the other is how the so-so bar lost its colour.
+    private static string FillClass(MoodRating mood) => mood switch
+    {
+        MoodRating.Happy => "mood-stat-fill mood-fill-happy",
+        MoodRating.Soso => "mood-stat-fill mood-fill-so-so",
+        _ => "mood-stat-fill mood-fill-shit",
+    };
+
+    // Day + verdict + everyone who weighed in, so a calendar cell explains itself on
+    // hover without needing a detail page behind it.
+    private string CellTitle(DateOnly day)
+    {
+        var label = day.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture);
+
+        var reviewers = reviews.Where(r => r.Day == day).Select(r => r.User).Distinct().ToList();
+        if (reviewers.Count == 0 || !dayWorst.TryGetValue(day, out var worst))
+            return label;
+
+        return $"{label} — {Word(worst)} ({string.Join(", ", reviewers)})";
+    }
+
+    // Invariant culture on purpose, as on the history page: a locale writing decimals
+    // with a comma would make the browser drop the width declaration.
+    private static string Pct(double value) =>
+        value.ToString("0.#", CultureInfo.InvariantCulture) + "%";
+}

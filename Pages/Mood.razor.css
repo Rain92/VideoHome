@@ -1,0 +1,386 @@
+.mood-layout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pad-4);
+    width: 100%;
+    max-width: 1100px;
+    margin-inline: auto;
+    padding: var(--pad-4);
+}
+
+/* ---------- Head ---------- */
+.mood-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.mood-title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    color: var(--ink-1);
+}
+
+.mood-lede {
+    margin: 0;
+    max-width: 76ch;
+    font-size: 0.9375rem;
+    color: var(--ink-3);
+    text-wrap: pretty;
+}
+
+/* ---------- Figures ---------- */
+.mood-figures {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr 1fr;
+    gap: var(--pad-3);
+}
+
+.figure {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: var(--pad-4);
+}
+
+.figure-label {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+}
+
+.figure-hero-value {
+    margin: 0;
+    font-size: 3rem;
+    line-height: 1.1;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    color: var(--accent);
+}
+
+.figure-flame {
+    margin-right: 0.35rem;
+    font-size: 0.8em;
+}
+
+.figure-sub {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+}
+
+.figure-value {
+    margin: 0;
+    font-size: 1.75rem;
+    line-height: 1.2;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-1);
+}
+
+.figure-hero {
+    background:
+        radial-gradient(120% 160% at 0% 0%, var(--accent-glow), transparent 60%),
+        linear-gradient(180deg, #ffffff09, transparent 45%),
+        var(--bg-2);
+}
+
+/* ---------- Section headers ---------- */
+.mood-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--pad-3);
+    padding-bottom: var(--pad-3);
+    /* Solid hairline one shade off the surface, as on the history day cards - a
+       dashed rule would read as a threshold rather than a divider. */
+    border-bottom: 1px solid var(--line-1);
+}
+
+.mood-section-title {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink-1);
+}
+
+.mood-section-meta {
+    flex: none;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+}
+
+/* ---------- Mood colours ---------- */
+/* The verdict colour itself lives only in the statistic bars - the emoji already
+   carries its meaning everywhere else. */
+
+/* ---------- Reviewable days ---------- */
+.mood-open-days {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: var(--pad-3);
+    padding-top: var(--pad-3);
+}
+
+.mood-open-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: var(--pad-3) var(--pad-2);
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-md);
+    background: #ffffff04;
+}
+
+.mood-open-day.is-mine {
+    background:
+        radial-gradient(120% 140% at 50% 0%, var(--accent-glow), transparent 70%),
+        #ffffff04;
+}
+
+.mood-open-name {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--ink-1);
+}
+
+.mood-open-worst {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--ink-2);
+}
+
+.mood-open-locked {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: auto 0 0;
+    font-size: 0.875rem;
+    color: var(--accent);
+}
+.mood-open-locked i { opacity: 0.7; }
+
+.mood-emoji {
+    font-size: 1.6rem;
+    line-height: 1;
+    font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+}
+
+/* ---------- The choice buttons ---------- */
+.mood-open-choices {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: auto;
+}
+
+/* The whole card is the promise "this cannot be undone", so the buttons get real
+   weight rather than looking like a toolbar you can come back to. */
+.mood-pick {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.55rem 0.7rem 0.45rem;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-md);
+    background: var(--bg-3);
+    cursor: pointer;
+    transition: transform 120ms var(--ease), border-color 120ms var(--ease),
+                background 120ms var(--ease);
+}
+.mood-pick .mood-emoji { font-size: 1.5rem; }
+
+.mood-pick-word {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--ink-3);
+}
+
+.mood-pick:hover,
+.mood-pick:focus-visible {
+    border-color: var(--line-2);
+    background: #ffffff08;
+    transform: translateY(-2px);
+}
+.mood-pick:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+.mood-pick:active { transform: translateY(0); }
+
+/* ---------- All-time distribution ---------- */
+.mood-stats {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--pad-2);
+    margin: 0;
+    padding: var(--pad-3) 0 0;
+}
+
+.mood-stat {
+    display: grid;
+    grid-template-columns: 2rem 4.5rem 1fr 2.5rem;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.mood-stat .mood-emoji { font-size: 1.35rem; justify-self: center; }
+
+.mood-stat-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--ink-2);
+}
+
+.mood-stat-bar {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--bg-3);
+    overflow: hidden;
+}
+
+.mood-stat-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 4px;
+    max-width: 100%;
+    border-radius: 999px;
+    transition: width 300ms var(--ease);
+}
+
+/* The bar carries the colour the emoji alone may not convey. */
+/* The class comes from Word(), so so-so carries its hyphen - keep them in step. */
+.mood-fill-happy { background: linear-gradient(90deg, #2e8f63, var(--success)); }
+.mood-fill-so-so { background: linear-gradient(90deg, #b98a24, var(--accent)); }
+.mood-fill-shit  { background: linear-gradient(90deg, #a83b35, var(--danger)); }
+
+.mood-stat-count {
+    font-size: 0.9375rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: var(--ink-1);
+}
+
+/* ---------- Calendar ---------- */
+.mood-month-nav {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.mood-month-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--ink-2);
+    cursor: pointer;
+    transition: border-color 120ms var(--ease), background 120ms var(--ease);
+}
+
+.mood-month-btn:hover:not(:disabled),
+.mood-month-btn:focus-visible {
+    border-color: var(--line-2);
+    background: #ffffff08;
+    color: var(--ink-1);
+}
+.mood-month-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+.mood-month-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.mood-weekdays,
+.mood-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+
+.mood-weekdays { margin-top: var(--pad-3); }
+
+.mood-weekday {
+    text-align: center;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+}
+
+.mood-grid { margin-top: 4px; }
+
+.mood-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1rem;
+    aspect-ratio: 1 / 0.82;
+    padding: 0.25rem 0.1rem;
+    border-radius: var(--radius-sm);
+    background: #ffffff04;
+}
+
+.mood-cell-day {
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-3);
+}
+
+/* An emoji sits in a rated cell, so its number steps back a shade to stay quiet. */
+.mood-cell:hover { background: #ffffff08; }
+
+.mood-cell.is-out {
+    visibility: hidden;
+}
+
+.mood-cell .mood-emoji { font-size: 1.35rem; }
+
+/* Today gets a ring, not a fill - it is still open and may end up any mood. */
+.mood-cell.is-today {
+    box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.mood-cell.is-today .mood-cell-day {
+    color: var(--accent);
+    font-weight: 700;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 767.98px) {
+    .mood-layout { padding: var(--pad-3); gap: var(--pad-3); }
+
+    .mood-figures { grid-template-columns: 1fr 1fr; }
+    .figure-hero  { grid-column: 1 / -1; }
+    .figure       { padding: var(--pad-3); }
+    .figure-hero-value { font-size: 2.5rem; }
+
+    /* The verdicts stack vertically instead of squeezing three buttons side by side
+       into a phone column. */
+    .mood-open-days { grid-template-columns: 1fr; }
+
+    .mood-stat { grid-template-columns: 2rem 4rem 1fr 2rem; }
+}
