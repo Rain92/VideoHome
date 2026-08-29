@@ -11,10 +11,6 @@
 
     <header class="mood-head">
         <h1 class="mood-title">Mood</h1>
-        <p class="mood-lede">
-            Everyone rates a day once, and only once — the day keeps the worst verdict it
-            collected. Today and the three days before it are still open.
-        </p>
     </header>
 
     @* The streak is the headline number, the counts support it - same hero-plus-tiles
@@ -50,6 +46,7 @@
             {
                 var hasMood = dayWorst.TryGetValue(day, out var worst);
                 var mine = myReviews.Contains(day);
+                var notes = Notes(day);
 
                 <div class="mood-open-day @(mine ? "is-mine" : null)" @key="day">
                     <p class="mood-open-name">@OpenDayLabel(day)</p>
@@ -62,6 +59,21 @@
                         </p>
                     }
 
+                    @* Everyone's notes for the day, so a card explains its verdict without
+                       anyone having to hover the calendar. *@
+                    @if (notes.Count > 0)
+                    {
+                        <ul class="mood-notes">
+                            @foreach (var note in notes)
+                            {
+                                <li class="mood-note" @key="note.User">
+                                    <span class="mood-note-text">@note.Comment</span>
+                                    <span class="mood-note-user">@note.User</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+
                     @if (mine)
                     {
                         <p class="mood-open-locked" title="Locked in — reviews cannot be changed.">
@@ -71,6 +83,19 @@
                     }
                     else
                     {
+                        @* Typed before the verdict, because the verdict is the submit: the
+                           buttons write whatever is in here along with the rating, and there
+                           is no second chance to add it afterwards. Bound on input rather
+                           than change so the last keystroke counts even if the click lands
+                           before the field would have blurred. *@
+                        <input class="mood-note-input"
+                               type="text"
+                               maxlength="@MoodService.MaxCommentLength"
+                               placeholder="a note, if you like"
+                               aria-label="Note for @OpenDayLabel(day)"
+                               value="@Draft(day)"
+                               @oninput="e => NoteTyped(day, e)"/>
+
                         <div class="mood-open-choices" role="group" aria-label="@OpenDayLabel(day)">
                             @foreach (var choice in allMoods)
                             {
@@ -93,25 +118,56 @@
         <section class="card-panel">
             <header class="mood-section-head">
                 <h2 class="mood-section-title">All-time</h2>
-                <span class="mood-section-meta">of days rated, at their worst</span>
             </header>
 
-            <ul class="mood-stats">
-                @foreach (var mood in allMoods)
-                {
-                    var share = dayWorst.Count == 0 ? 0 : moodCounts[mood] * 100.0 / dayWorst.Count;
+            <div class="mood-alltime">
+                <ul class="mood-stats">
+                    @foreach (var mood in allMoods)
+                    {
+                        var share = dayWorst.Count == 0 ? 0 : moodCounts[mood] * 100.0 / dayWorst.Count;
 
-                    <li class="mood-stat" @key="mood">
-                        <span class="mood-emoji">@Emoji(mood)</span>
-                        <span class="mood-stat-name">@Word(mood)</span>
-                        <span class="mood-stat-bar" title="@moodCounts[mood] of @dayWorst.Count">
-                            <span class="@FillClass(mood)"
-                                  style="width: @Pct(share);"></span>
-                        </span>
-                        <span class="mood-stat-count">@moodCounts[mood]</span>
-                    </li>
-                }
-            </ul>
+                        <li class="mood-stat" @key="mood">
+                            <span class="mood-emoji">@Emoji(mood)</span>
+                            <span class="mood-stat-name">@Word(mood)</span>
+                            <span class="mood-stat-bar" title="@moodCounts[mood] of @dayWorst.Count">
+                                <span class="@FillClass(mood)"
+                                      style="width: @Pct(share);"></span>
+                            </span>
+                            <span class="mood-stat-count">@moodCounts[mood]</span>
+                        </li>
+                    }
+                </ul>
+
+                @* The same numbers as the bars, as one whole: the bars answer "how many
+                   of each", the ring answers "what does the record look like".
+                   Drawn as dashed strokes on one circle rather than as arc paths - no
+                   trigonometry, and a single-mood record needs no special case.
+                   role=img with a label, since the bars beside it already carry the
+                   figures for anyone reading this out. *@
+                <figure class="mood-pie" role="img" aria-label="@PieLabel()">
+                    <svg viewBox="0 0 120 120" class="mood-pie-svg">
+                        @* -90° so the first slice starts at twelve o'clock. *@
+                        <g transform="rotate(-90 60 60)">
+                            <circle class="mood-pie-track" cx="60" cy="60" r="@Num(PieRadius)"/>
+                            @foreach (var slice in PieSlices())
+                            {
+                                <circle class="mood-pie-slice @SliceClass(slice.Mood)"
+                                        @key="slice.Mood"
+                                        cx="60" cy="60" r="@Num(PieRadius)"
+                                        stroke-dasharray="@Num(slice.Length) @Num(PieCircumference - slice.Length)"
+                                        stroke-dashoffset="@Num(-slice.Offset)">
+                                    <title>@Word(slice.Mood): @moodCounts[slice.Mood] of @dayWorst.Count (@Pct(slice.Share))</title>
+                                </circle>
+                            }
+                        </g>
+                        @* The pair is centred as a block, not each line on its own: the
+                           number sits just above the middle so the two together read as
+                           centred in the hole. *@
+                        <text class="mood-pie-total" x="60" y="56">@dayWorst.Count</text>
+                        <text class="mood-pie-unit" x="60" y="75">days</text>
+                    </svg>
+                </figure>
+            </div>
         </section>
     }
 
@@ -136,23 +192,77 @@
             }
         </div>
 
+        @* Every cell is a button, including the empty ones - one code path, and the
+           disabled attribute is what tells a keyboard there is nothing behind an
+           unrated day. *@
         <div class="mood-grid">
             @foreach (var day in CalendarCells())
             {
                 var inMonth = day.Month == monthShown.Month;
                 var hasMood = dayWorst.TryGetValue(day, out var worst);
+                var notes = Notes(day);
 
-                <div class="mood-cell @(inMonth ? null : "is-out") @(day == today ? "is-today" : null)"
-                     @key="day"
-                     title="@CellTitle(day)">
+                <button type="button"
+                        class="mood-cell @(inMonth ? null : "is-out") @(day == today ? "is-today" : null) @(day == selectedDay ? "is-selected" : null)"
+                        @key="day"
+                        disabled="@(!inMonth || !hasMood)"
+                        aria-pressed="@(day == selectedDay ? "true" : "false")"
+                        title="@CellTitle(day)"
+                        @onclick="() => SelectDay(day)">
                     <span class="mood-cell-day">@day.Day</span>
                     @if (hasMood)
                     {
                         <span class="mood-emoji">@Emoji(worst)</span>
                     }
-                </div>
+                    @* The note itself, not a marker for one: a cell is only wide enough
+                       for the opening words, and the panel below carries the rest. *@
+                    @if (notes.Count > 0)
+                    {
+                        <span class="mood-cell-note">@notes[0].Comment</span>
+                        @if (notes.Count > 1)
+                        {
+                            <span class="mood-cell-more">+@(notes.Count - 1) more</span>
+                        }
+                    }
+                </button>
             }
         </div>
+
+        @* Full text for the day just clicked. A cell can only ever show the first line
+           of the first note, and a 140-character remark deserves somewhere to be read
+           in full. *@
+        @if (selectedDay is { } picked)
+        {
+            <div class="mood-day-detail" role="region" aria-label="@DetailLabel(picked)">
+                <header class="mood-detail-head">
+                    <span class="mood-emoji">@Emoji(dayWorst[picked])</span>
+                    <span class="mood-detail-day">@DetailLabel(picked)</span>
+                    <button type="button" class="mood-detail-close" @onclick="() => SelectDay(picked)"
+                            aria-label="Close">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                </header>
+
+                @if (Notes(picked).Count > 0)
+                {
+                    <ul class="mood-notes">
+                        @foreach (var note in Notes(picked))
+                        {
+                            <li class="mood-note" @key="note.User">
+                                <span class="mood-note-text">@note.Comment</span>
+                                <span class="mood-note-user">@note.User</span>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p class="mood-detail-empty">
+                        Rated @Word(dayWorst[picked]) by @string.Join(", ", Reviewers(picked)) — no notes.
+                    </p>
+                }
+            </div>
+        }
     </section>
 </div>
 
@@ -175,6 +285,18 @@
 
     private List<DateOnly> reviewableDays = new();
     private Dictionary<MoodRating, int> moodCounts = new();
+
+    // The notes left on each day, in the order they were cast. Only days that actually
+    // collected one appear, so the lookup doubles as "is there anything to show".
+    private Dictionary<DateOnly, List<MoodReview>> dayNotes = new();
+
+    // What each open day's note box currently holds. Kept out of MoodReview on purpose:
+    // nothing here is a review until a verdict button turns it into one, and an
+    // abandoned draft should leave no trace.
+    private readonly Dictionary<DateOnly, string> noteDrafts = new();
+
+    // The calendar day whose notes are open below the grid, if any.
+    private DateOnly? selectedDay;
 
     private DateOnly monthShown;
     private bool canGoForward =>
@@ -216,6 +338,11 @@
             .Select(i => today.AddDays(-i))
             .ToList();
 
+        dayNotes = reviews
+            .Where(r => !string.IsNullOrEmpty(r.Comment))
+            .GroupBy(r => r.Day)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         moodCounts = allMoods.ToDictionary(m => m, _ => 0);
         foreach (var mood in dayWorst.Values)
             moodCounts[mood]++;
@@ -252,24 +379,61 @@
         0 when !streakEndedToday => "no happy days in a row yet",
         0 => $"the last rating was {Word(dayWorst[today])} — the streak starts again tomorrow",
         _ when !streakEndedToday => $"{streakDays} {(streakDays == 1 ? "day" : "days")} in a row — rate today to keep it going",
-        _ => $"{streakDays} happy {(streakDays == 1 ? "day" : "days")} in a row, today included",
+        _ => $"{streakDays} happy {(streakDays == 1 ? "day" : "days")} in a row",
     };
 
     private void Submit(DateOnly day, MoodRating rating)
     {
         // A false return means the server already had a review from this user for the
         // day - reloading shows the locked state either way.
-        Moods.TryAddReview(day, username, rating);
+        Moods.TryAddReview(day, username, rating, Draft(day));
+
+        // Either the note is stored now or the review was rejected as a duplicate; in
+        // both cases the box has nothing left to hold on to.
+        noteDrafts.Remove(day);
+
         Load();
     }
 
-    private void PreviousMonth() => monthShown = monthShown.AddMonths(-1);
+    private string Draft(DateOnly day) =>
+        noteDrafts.TryGetValue(day, out var text) ? text : "";
+
+    private void NoteTyped(DateOnly day, ChangeEventArgs e) =>
+        noteDrafts[day] = e.Value?.ToString() ?? "";
+
+    private static readonly List<MoodReview> noNotes = new();
+
+    private List<MoodReview> Notes(DateOnly day) =>
+        dayNotes.TryGetValue(day, out var list) ? list : noNotes;
+
+    // Clicking the open day again closes it - the cell is the toggle, so the close
+    // button in the panel is just a second way to press the same thing.
+    private void SelectDay(DateOnly day) =>
+        selectedDay = selectedDay == day ? null : day;
+
+    private void PreviousMonth()
+    {
+        monthShown = monthShown.AddMonths(-1);
+
+        // The panel names a date; leaving it open while the grid moves to another month
+        // would leave it describing a day nothing on screen points at any more.
+        selectedDay = null;
+    }
 
     private void NextMonth()
     {
-        if (canGoForward)
-            monthShown = monthShown.AddMonths(1);
+        if (!canGoForward)
+            return;
+
+        monthShown = monthShown.AddMonths(1);
+        selectedDay = null;
     }
+
+    private static string DetailLabel(DateOnly day) =>
+        day.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture);
+
+    private List<string> Reviewers(DateOnly day) =>
+        reviews.Where(r => r.Day == day).Select(r => r.User).Distinct().ToList();
 
     // Monday-first grid covering exactly the weeks the month touches. Six rows would
     // pad most months with dead cells; this grows and shrinks with the month instead.
@@ -323,17 +487,81 @@
     // hover without needing a detail page behind it.
     private string CellTitle(DateOnly day)
     {
-        var label = day.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture);
+        var label = DetailLabel(day);
 
-        var reviewers = reviews.Where(r => r.Day == day).Select(r => r.User).Distinct().ToList();
+        var reviewers = Reviewers(day);
         if (reviewers.Count == 0 || !dayWorst.TryGetValue(day, out var worst))
             return label;
 
-        return $"{label} — {Word(worst)} ({string.Join(", ", reviewers)})";
+        var head = $"{label} — {Word(worst)} ({string.Join(", ", reviewers)})";
+
+        // Notes on their own lines below the verdict: a title attribute keeps newlines,
+        // and running them together would turn a hover into a wall of text.
+        var notes = Notes(day);
+        if (notes.Count == 0)
+            return head;
+
+        return head + "\n" + string.Join("\n", notes.Select(n => $"{n.User}: \u201c{n.Comment}\u201d"));
     }
+
+    // ---------- The all-time ring ----------
+
+    // Radius inside the 120-unit viewBox, leaving room for the stroke width the CSS
+    // sets: r + half the stroke has to stay under 60 or the ring clips its own box.
+    private const double PieRadius = 45;
+    private const double PieCircumference = 2 * Math.PI * PieRadius;
+
+    private readonly record struct PieSlice(MoodRating Mood, double Length, double Offset, double Share);
+
+    // One dashed stroke per mood, laid end to end around the circle. Empty moods are
+    // skipped rather than drawn as zero-length dashes, which round caps would still
+    // render as a dot.
+    private IEnumerable<PieSlice> PieSlices()
+    {
+        var total = dayWorst.Count;
+        if (total == 0)
+            yield break;
+
+        double placed = 0;
+        foreach (var mood in allMoods)
+        {
+            var count = moodCounts[mood];
+            if (count == 0)
+                continue;
+
+            var length = PieCircumference * count / total;
+            yield return new PieSlice(mood, length, placed, count * 100.0 / total);
+            placed += length;
+        }
+    }
+
+    // The ring is one image to a screen reader, so its label has to carry the whole
+    // breakdown - the per-slice <title> elements are hover text, not a substitute.
+    private string PieLabel()
+    {
+        var parts = allMoods
+            .Where(m => moodCounts[m] > 0)
+            .Select(m => $"{Word(m)} {moodCounts[m]}");
+
+        return $"All-time split of {dayWorst.Count} rated days: {string.Join(", ", parts)}";
+    }
+
+    // Same split as FillClass and for the same reason: the class name may not carry the
+    // spaces and diacritics Word() is free to use.
+    private static string SliceClass(MoodRating mood) => mood switch
+    {
+        MoodRating.Happy => "mood-slice-happy",
+        MoodRating.Soso => "mood-slice-so-so",
+        _ => "mood-slice-shit",
+    };
 
     // Invariant culture on purpose, as on the history page: a locale writing decimals
     // with a comma would make the browser drop the width declaration.
     private static string Pct(double value) =>
         value.ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    // Same trap in SVG geometry: a comma decimal separator inside stroke-dasharray would
+    // read as the separator between the two dash lengths.
+    private static string Num(double value) =>
+        value.ToString("0.##", CultureInfo.InvariantCulture);
 }

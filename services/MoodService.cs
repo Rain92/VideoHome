@@ -29,6 +29,12 @@ public sealed class MoodReview
     public string User { get; set; } = "";
 
     public MoodRating Rating { get; set; }
+
+    // Optional one-liner the reviewer left with their verdict. Empty rather than null so
+    // every reader can treat it as a string; files written before comments existed
+    // deserialize the property as null, which Load() normalises away.
+    public string Comment { get; set; } = "";
+
     public DateTimeOffset SubmittedUtc { get; set; }
 }
 
@@ -44,6 +50,10 @@ public sealed class MoodService
 {
     // Today plus this many days back may still be reviewed.
     public const int ReviewWindowDays = 3;
+
+    // A note is a remark on the day, not a diary entry. Enforced here as well as by the
+    // input's maxlength, because the field is the one thing a client controls freely.
+    public const int MaxCommentLength = 140;
 
     private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
 
@@ -86,7 +96,7 @@ public sealed class MoodService
 
     // Records a verdict. Returns false - changing nothing - when this user has already
     // reviewed the day, or the day lies outside the reviewable window.
-    public bool TryAddReview(DateOnly day, string user, MoodRating rating)
+    public bool TryAddReview(DateOnly day, string user, MoodRating rating, string? comment = null)
     {
         if (string.IsNullOrWhiteSpace(user))
             return false;
@@ -109,6 +119,7 @@ public sealed class MoodService
                 Day = day,
                 User = user,
                 Rating = rating,
+                Comment = Clean(comment),
                 SubmittedUtc = DateTimeOffset.UtcNow
             });
 
@@ -129,11 +140,23 @@ public sealed class MoodService
                     Day = r.Day,
                     User = r.User,
                     Rating = r.Rating,
+                    Comment = r.Comment,
                     SubmittedUtc = r.SubmittedUtc
                 })
                 .OrderBy(r => r.Day)
                 .ToList();
         }
+    }
+
+    // Trimmed and cut to length. Whitespace-only notes become empty, so "did the user
+    // leave a note" stays a plain string check everywhere else.
+    private static string Clean(string? comment)
+    {
+        if (string.IsNullOrWhiteSpace(comment))
+            return "";
+
+        comment = comment.Trim();
+        return comment.Length <= MaxCommentLength ? comment : comment[..MaxCommentLength];
     }
 
     // Caller holds _lock. Write-then-rename, sibling temp file - same reasoning as the
@@ -182,6 +205,11 @@ public sealed class MoodService
             {
                 if (string.IsNullOrWhiteSpace(entry.User) || !Enum.IsDefined(entry.Rating))
                     continue;
+
+                // Reviews written before comments existed have no field at all, and a
+                // hand-edited one could hold anything - both arrive here as something the
+                // page would rather not render raw.
+                entry.Comment = Clean(entry.Comment);
 
                 _reviews.Add(entry);
             }

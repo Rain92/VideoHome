@@ -222,13 +222,25 @@
 .mood-pick:active { transform: translateY(0); }
 
 /* ---------- All-time distribution ---------- */
+/* Bars take the room they need to stay readable, the ring keeps its intrinsic size on
+   the right. auto rather than a fixed track so the ring never gets squeezed out of
+   round when the bars grow. */
+.mood-alltime {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: var(--pad-4);
+    padding-top: var(--pad-3);
+}
+
 .mood-stats {
     list-style: none;
     display: flex;
     flex-direction: column;
     gap: var(--pad-2);
     margin: 0;
-    padding: var(--pad-3) 0 0;
+    /* The grid above owns the spacing now. */
+    padding: 0;
 }
 
 .mood-stat {
@@ -277,6 +289,134 @@
     text-align: right;
     color: var(--ink-1);
 }
+
+/* ---------- All-time ring ---------- */
+.mood-pie {
+    margin: 0;
+    width: 170px;
+    flex: none;
+}
+
+.mood-pie-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+/* Every ring stroke shares these; only the colour and the dash pattern differ. */
+.mood-pie-track,
+.mood-pie-slice {
+    fill: none;
+    stroke-width: 18;
+}
+
+/* Shows through wherever a slice is not - and is the whole ring while a record holds
+   only one mood on the far side of the circle. */
+.mood-pie-track { stroke: var(--bg-3); }
+
+.mood-pie-slice {
+    /* Butt caps: round ones would overhang each slice by half the stroke width and
+       overlap the neighbour it was measured against. */
+    stroke-linecap: butt;
+    transition: stroke-dasharray 300ms var(--ease), stroke-dashoffset 300ms var(--ease);
+}
+
+/* Flat colours where the bars run gradients: a gradient rotating round a ring reads as
+   a lighting effect rather than as one value. These are the bars' end stops. */
+.mood-slice-happy { stroke: var(--success); }
+.mood-slice-so-so { stroke: var(--accent); }
+.mood-slice-shit  { stroke: var(--danger); }
+
+/* The hole is not empty: the count the whole ring is a breakdown of sits in it. */
+.mood-pie-total,
+.mood-pie-unit {
+    text-anchor: middle;
+    /* SVG text has no line box to centre in, so the y in the markup is the baseline;
+       this pulls the number's optical centre onto the ring's centre. */
+    dominant-baseline: middle;
+}
+
+.mood-pie-total {
+    font-size: 26px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    fill: var(--ink-1);
+}
+
+.mood-pie-unit {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    fill: var(--ink-3);
+}
+
+/* ---------- Notes ---------- */
+.mood-notes {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.mood-note {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.4rem 0.55rem;
+    border-radius: var(--radius-sm);
+    /* Quoted speech reads best set apart from the card it sits on. */
+    background: #ffffff06;
+    border-left: 2px solid var(--line-2);
+}
+
+.mood-note-text {
+    font-size: 0.8125rem;
+    color: var(--ink-2);
+    /* Notes arrive as one line of free text and may be one long unbroken word. */
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+}
+
+.mood-note-user {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+}
+
+.mood-note-input {
+    width: 100%;
+    /* Sits directly above the buttons that will submit it, so it stays visually part
+       of the same act rather than looking like a separate field to save. */
+    margin-top: auto;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-sm);
+    background: var(--bg-3);
+    color: var(--ink-1);
+    font: inherit;
+    font-size: 0.8125rem;
+    transition: border-color 120ms var(--ease), background 120ms var(--ease);
+}
+
+.mood-note-input::placeholder { color: var(--ink-3); }
+
+.mood-note-input:hover { border-color: var(--line-2); }
+.mood-note-input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-color: var(--line-2);
+    background: #ffffff08;
+}
+
+/* The input took the push-to-bottom job; the buttons now follow it directly. */
+.mood-open-choices { margin-top: 0; }
 
 /* ---------- Calendar ---------- */
 .mood-month-nav {
@@ -333,16 +473,37 @@
 
 .mood-grid { margin-top: 4px; }
 
+/* A button rather than a div since a rated day opens its notes below the grid. The
+   appearance resets are what keep it looking like a cell. */
 .mood-cell {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 0.1rem;
-    aspect-ratio: 1 / 0.82;
-    padding: 0.25rem 0.1rem;
+    /* Was an aspect ratio; a cell carrying a note has to be free to grow instead of
+       clipping it. Grid rows equalise the heights across each week anyway. */
+    min-height: 4.75rem;
+    padding: 0.3rem 0.25rem;
+    border: none;
     border-radius: var(--radius-sm);
     background: #ffffff04;
+    font: inherit;
+    color: inherit;
+    text-align: center;
+    cursor: pointer;
+    /* Notes are free text and the columns are narrow: without this one long word
+       would push the whole grid wider. */
+    overflow: hidden;
+    transition: background 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+
+/* Unrated days have nothing to open - they stay cells, not targets. */
+.mood-cell:disabled { cursor: default; }
+
+.mood-cell:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 .mood-cell-day {
@@ -352,7 +513,43 @@
 }
 
 /* An emoji sits in a rated cell, so its number steps back a shade to stay quiet. */
-.mood-cell:hover { background: #ffffff08; }
+.mood-cell:hover:not(:disabled) { background: #ffffff08; }
+
+/* The first note, in the cell itself. Two lines is what a column this narrow can give
+   it before the row starts driving the calendar's height; the rest is one click away
+   in the panel below. */
+.mood-cell-note {
+    max-width: 100%;
+    font-size: 0.625rem;
+    line-height: 1.25;
+    color: var(--ink-3);
+    /* The clamp needs the old flexbox line-clamp trio; the shorthand is still too new
+       to rely on here. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+/* Only the first note fits, so the cell says outright that there are others. */
+.mood-cell-more {
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    opacity: 0.75;
+}
+
+/* The open day, tied to the panel below it. A fill rather than a ring: today already
+   owns the ring, and the two can be the same cell. */
+.mood-cell.is-selected {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+.mood-cell.is-selected .mood-cell-note { color: var(--ink-2); }
 
 .mood-cell.is-out {
     visibility: hidden;
@@ -369,6 +566,65 @@
     font-weight: 700;
 }
 
+/* ---------- Selected day ---------- */
+.mood-day-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pad-2);
+    margin-top: var(--pad-3);
+    padding: var(--pad-3);
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-md);
+    background: #ffffff04;
+}
+
+.mood-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.mood-detail-head .mood-emoji { font-size: 1.35rem; }
+
+.mood-detail-day {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--ink-1);
+}
+
+/* Pushed to the far end of the header row. */
+.mood-detail-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin-left: auto;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--ink-3);
+    cursor: pointer;
+    transition: border-color 120ms var(--ease), background 120ms var(--ease),
+                color 120ms var(--ease);
+}
+.mood-detail-close:hover,
+.mood-detail-close:focus-visible {
+    border-color: var(--line-2);
+    background: #ffffff08;
+    color: var(--ink-1);
+}
+.mood-detail-close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.mood-detail-empty {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 767.98px) {
     .mood-layout { padding: var(--pad-3); gap: var(--pad-3); }
@@ -383,4 +639,14 @@
     .mood-open-days { grid-template-columns: 1fr; }
 
     .mood-stat { grid-template-columns: 2rem 4rem 1fr 2rem; }
+
+    /* Seven columns on a phone leave a cell too narrow for words; the emoji and the
+       day number stay, the note text is left to the panel below. */
+    .mood-cell { min-height: 3.25rem; }
+    .mood-cell-note,
+    .mood-cell-more { display: none; }
+
+    /* Side by side leaves neither the bars nor the ring enough width on a phone. */
+    .mood-alltime { grid-template-columns: 1fr; justify-items: center; }
+    .mood-stats   { width: 100%; }
 }
